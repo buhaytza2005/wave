@@ -26,9 +26,25 @@ const
   groupHeaderRow = 1,
   groupHeaderRowsCount = 2,
   filteredItem = 1,
-  emitMock = jest.fn()
+  emitMock = jest.fn(),
+  tagsColumn = {
+    name: 'tagsColumn',
+    label: 'tagsColumn',
+    filterable: true,
+    cell_type: {
+      tag: {
+        name: 'tags',
+        tags: [
+          { label: 'TAG1', color: 'red' },
+          { label: 'TAG2', color: 'green' },
+          { label: 'TAG3', color: 'blue' },
+        ]
+      }
+    }
+  }
 
 let tableProps: Table
+let sortTableProps: Table
 
 describe('Table.tsx', () => {
   beforeAll(() => {
@@ -76,6 +92,56 @@ describe('Table.tsx', () => {
     const { getAllByRole } = render(<XTable model={tableProps} />)
     expect(getAllByRole('gridcell')[0].textContent).toBe('6/23/2022, 12:50:28 AM')
   })
+
+  it('Renders tags correctly', () => {
+    tableProps = {
+      ...tableProps,
+      columns: [tagsColumn],
+      rows: [
+        { name: 'rowname1', cells: ['TAG1'] },
+        { name: 'rowname2', cells: ['TAG2,TAG3'] },
+        { name: 'rowname3', cells: ['TAG2'] }
+      ]
+    }
+
+    const { container, getAllByRole, getAllByTestId } = render(<XTable model={tableProps} />)
+
+    fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron')!)
+
+    const checkboxes = getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(3)
+
+    checkboxes.forEach(c => expect(c).not.toBeChecked())
+
+    expect(getAllByTestId('tags')[0].childElementCount).toBe(1)
+    expect(getAllByTestId('tags')[1].childElementCount).toBe(2)
+    expect(getAllByTestId('tags')[2].childElementCount).toBe(1)
+  })
+
+  it('Does not render empty tags', () => {
+    tableProps = {
+      ...tableProps,
+      columns: [tagsColumn],
+      rows: [
+        { name: 'rowname1', cells: ['TAG1'] },
+        { name: 'rowname2', cells: ['TAG2,TAG1'] },
+        { name: 'rowname3', cells: [''] }
+      ]
+    }
+
+    const { container, getAllByRole, getAllByTestId } = render(<XTable model={tableProps} />)
+
+    fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron')!)
+
+    expect(getAllByRole('checkbox')).toHaveLength(2)
+
+    const [tags1, tags2, tags3] = getAllByTestId('tags')
+    expect(tags1.childElementCount).toBe(1)
+    expect(tags2.childElementCount).toBe(2)
+    expect(tags3.childElementCount).toBe(0)
+  })
+
+  // TODO: Add a test to check that no event is emitted on rows update. Would result in infinite loop.
 
   describe('Height compute', () => {
 
@@ -146,6 +212,11 @@ describe('Table.tsx', () => {
       expect(wave.args[name]).toMatchObject(['rowname1'])
     })
 
+    it('Sets args on init - value specified', () => {
+      render(<XTable model={{ ...tableProps, value: 'rowname1', single: true }} />)
+      expect(wave.args[name]).toMatchObject(['rowname1'])
+    })
+
     it('Sets args and calls sync on doubleclick', () => {
       const pushMock = jest.fn()
       wave.push = pushMock
@@ -168,6 +239,50 @@ describe('Table.tsx', () => {
       expect(pushMock).toHaveBeenCalled()
     })
 
+    it('Sets args and calls sync on first col click - single selection', () => {
+      const pushMock = jest.fn()
+      wave.push = pushMock
+
+      const { getByText } = render(<XTable model={{ ...tableProps, single: true }} />)
+      fireEvent.click(getByText(cell21))
+
+      expect(wave.args[name]).toMatchObject(['rowname2'])
+      expect(pushMock).toHaveBeenCalled()
+    })
+
+    it('Sets args and calls sync on first col click - multiple selection', () => {
+      const pushMock = jest.fn()
+      wave.push = pushMock
+
+      const { getByText } = render(<XTable model={{ ...tableProps, multiple: true }} />)
+      fireEvent.click(getByText(cell21))
+
+      expect(wave.args[name]).toMatchObject(['rowname2'])
+      expect(pushMock).toHaveBeenCalled()
+    })
+
+    it('Do not set args and call sync on doubleclick - single selection', () => {
+      const pushMock = jest.fn()
+      wave.push = pushMock
+
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, single: true }} />)
+      fireEvent.doubleClick(getAllByRole('row')[1])
+
+      expect(wave.args[name]).not.toMatchObject(['rowname1'])
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+
+    it('Do not set args and call sync on doubleclick - multiple selection', () => {
+      const pushMock = jest.fn()
+      wave.push = pushMock
+
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, multiple: true }} />)
+      fireEvent.doubleClick(getAllByRole('row')[1])
+
+      expect(wave.args[name]).not.toMatchObject(['rowname1'])
+      expect(pushMock).not.toHaveBeenCalled()
+    })
+
     it('Sets args - multiple selection', () => {
       const { getAllByRole } = render(<XTable model={{ ...tableProps, multiple: true }} />)
       const checkboxes = getAllByRole('checkbox')
@@ -176,6 +291,53 @@ describe('Table.tsx', () => {
       fireEvent.click(checkboxes[2])
 
       expect(wave.args[name]).toMatchObject(['rowname1', 'rowname2'])
+    })
+
+    it('Sets args - single selection', () => {
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, single: true }} />)
+      const radioButtons = getAllByRole('radio')
+
+      fireEvent.click(radioButtons[0])
+      expect(wave.args[name]).toMatchObject(['rowname1'])
+
+      fireEvent.click(radioButtons[1])
+      expect(wave.args[name]).toMatchObject(['rowname2'])
+    })
+
+    it('Fires event - multiple selection - select single', () => {
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, multiple: true, events: ['select'] }} />)
+      const checkboxes = getAllByRole('checkbox')
+
+      fireEvent.click(checkboxes[1])
+
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'select', ['rowname1'])
+      expect(emitMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('Fires event - multiple selection - select multiple', () => {
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, multiple: true, events: ['select'] }} />)
+      const checkboxes = getAllByRole('checkbox')
+
+      fireEvent.click(checkboxes[1])
+      fireEvent.click(checkboxes[2])
+
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'select', ['rowname1', 'rowname2'])
+      expect(emitMock).toHaveBeenCalledTimes(2)
+    })
+
+    it('Fires event - single selection', () => {
+      const { getAllByRole } = render(<XTable model={{ ...tableProps, single: true, events: ['select'] }} />)
+      const radioButtons = getAllByRole('radio')
+
+      fireEvent.click(radioButtons[0])
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'select', ['rowname1'])
+      expect(emitMock).toHaveBeenCalledTimes(1)
+
+      emitMock.mockClear()
+
+      fireEvent.click(radioButtons[1])
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'select', ['rowname2'])
+      expect(emitMock).toHaveBeenCalledTimes(1)
     })
 
     it('Clicks a column - link set on second col', () => {
@@ -218,6 +380,22 @@ describe('Table.tsx', () => {
   })
 
   describe('sort', () => {
+    beforeEach(() => {
+      sortTableProps = {
+        ...tableProps,
+        rows: [
+          { name: '4', cells: ['d', 'closed'] },
+          { name: '3', cells: ['c', 'closed'] },
+          { name: '2', cells: ['b', 'open'] },
+          { name: '1', cells: ['a', 'open'] }
+        ],
+        columns: [
+          { name: 'colname1', label: 'Col1', sortable: true },
+          { name: 'colname2', label: 'Col2', filterable: true, searchable: true },
+        ],
+      }
+    })
+
     it('Does not render sort arrow on sortable columns by default', () => {
       const { container } = render(<XTable model={tableProps} />)
 
@@ -325,27 +503,210 @@ describe('Table.tsx', () => {
       expect(emitMock).toHaveBeenCalledTimes(1)
     })
 
-    it('Sorts by multiple columns', () => {
-      tableProps = {
-        ...tableProps,
-        rows: [
-          { name: '2', cells: ['bb', 'open'] },
-          { name: '3', cells: ['cc', 'closed'] },
-          { name: '1', cells: ['aa', 'closed'] },
-        ],
-        columns: [
-          { name: 'colname1', label: 'Col1', sortable: true },
-          { name: 'colname2', label: 'Col2', sortable: true },
-        ],
-      }
-      const { container, getAllByRole } = render(<XTable model={tableProps} />)
+    it('Keep sort order when applying filters - no groups', () => {
+      const { container, getAllByText, getAllByRole } = render(<XTable model={sortTableProps} />)
 
-      const [sortCol1, sortCol2] = container.querySelectorAll('.ms-DetailsHeader-cellTitle')
-      expect(getAllByRole('gridcell')[0].textContent).toBe('bb')
-      fireEvent.click(sortCol2)
-      expect(getAllByRole('gridcell')[0].textContent).toBe('cc')
-      fireEvent.click(sortCol1)
-      expect(getAllByRole('gridcell')[0].textContent).toBe('aa')
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      // Open filter menu
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron') as HTMLElement)
+
+      fireEvent.click(getAllByText('closed')[2].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('c')
+
+      fireEvent.click(getAllByText('closed')[2].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      fireEvent.click(getAllByText('open')[2].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+    })
+
+    it('Keep sort order after Select/Deselect All filters - no groups', () => {
+      const { container, getByText, getAllByRole } = render(<XTable model={sortTableProps} />)
+
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      // Open filter menu
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron') as HTMLElement)
+
+      fireEvent.click(getByText('Select All'))
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      fireEvent.click(getByText('Deselect All'))
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+    })
+
+    it('Keep sort order when applying filters - groups', () => {
+      tableProps = {
+        ...sortTableProps,
+        groupable: true,
+      }
+      const { container, getAllByText, getAllByRole, getByTestId } = render(<XTable model={tableProps} />)
+
+      fireEvent.click(getByTestId('groupby'))
+      fireEvent.click(getAllByText('Col2')[1]!)
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-collapseButton')!)
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('b')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('a')
+
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('a')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('b')
+
+      // Open filter menu
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron') as HTMLElement)
+
+      fireEvent.click(getAllByText('closed')[3].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[11]).toBeUndefined()
+      expect(getAllByRole('gridcell')[14]).toBeUndefined()
+
+      fireEvent.click(getAllByText('closed')[3].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[11]?.textContent).toBe('a')
+      expect(getAllByRole('gridcell')[14]?.textContent).toBe('b')
+    })
+
+    it('Keep sort order after Select/Deselect All filters - groups', () => {
+      tableProps = {
+        ...sortTableProps,
+        groupable: true,
+      }
+      const { container, getByText, getAllByText, getAllByRole, getByTestId } = render(<XTable model={tableProps} />)
+      const expectCorrectSortOrder = () => {
+        expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+        expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+        expect(getAllByRole('gridcell')[11].textContent).toBe('a')
+        expect(getAllByRole('gridcell')[14].textContent).toBe('b')
+      }
+
+      fireEvent.click(getByTestId('groupby'))
+      fireEvent.click(getAllByText('Col2')[1]!)
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-collapseButton')!)
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('b')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('a')
+
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expectCorrectSortOrder()
+
+      // Open filter menu
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron') as HTMLElement)
+
+      fireEvent.click(getByText('Select All'))
+      expectCorrectSortOrder()
+
+      fireEvent.click(getByText('Deselect All'))
+      expectCorrectSortOrder()
+    })
+
+    it('Reset filtered items sorting after table reset', () => {
+      tableProps = {
+        ...sortTableProps,
+        resettable: true
+      }
+      const { container, getAllByText, getAllByRole, getByText } = render(<XTable model={tableProps} />)
+
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      fireEvent.click(getByText('Reset table'))
+
+      // Open filter menu
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron') as HTMLElement)
+
+      fireEvent.click(getAllByText('open')[2].parentElement as HTMLDivElement)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('b')
+    })
+
+    it('Keep sort order after applying search - no groups', () => {
+      tableProps = sortTableProps
+      const { container, getAllByRole, getByTestId } = render(<XTable model={tableProps} />)
+
+      // Sort by first column
+      expect(getAllByRole('gridcell')[0].textContent).toBe('d')
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      // Search
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length + headerRow)
+      fireEvent.change(getByTestId('search'), { target: { value: 'No match!' } })
+      expect(getAllByRole('row')).toHaveLength(headerRow)
+      fireEvent.change(getByTestId('search'), { target: { value: 'open' } })
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length - 2 + headerRow)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+    })
+
+    it('Keep sort order after removing search - no groups', () => {
+      tableProps = sortTableProps
+      const { container, getAllByRole, getByTestId } = render(<XTable model={tableProps} />)
+
+      // Sort by first column
+      expect(getAllByRole('gridcell')[0].textContent).toBe('d')
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+
+      // Search
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length + headerRow)
+      fireEvent.change(getByTestId('search'), { target: { value: 'No match!' } })
+      expect(getAllByRole('row')).toHaveLength(headerRow)
+      fireEvent.change(getByTestId('search'), { target: { value: '' } })
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length + headerRow)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('a')
+    })
+
+    it('Keep sort after applying search - groups', () => {
+      tableProps = {
+        ...sortTableProps,
+        groupable: true
+      }
+      const { container, getAllByText, getAllByRole, getByTestId } = render(<XTable model={tableProps} />)
+
+      fireEvent.click(getByTestId('groupby'))
+      fireEvent.click(getAllByText('Col2')[1]!)
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-collapseButton')!)
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('b')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('a')
+
+      // Sort by first column
+      fireEvent.click(container.querySelectorAll('.ms-DetailsHeader-cellTitle')[0])
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('a')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('b')
+
+      // Search
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length + headerRow + groupHeaderRowsCount)
+      fireEvent.change(getByTestId('search'), { target: { value: 'No match!' } })
+      expect(getAllByRole('row')).toHaveLength(headerRow)
+      fireEvent.change(getByTestId('search'), { target: { value: '' } })
+      expect(getAllByRole('row')).toHaveLength(tableProps.rows!.length + headerRow + groupHeaderRowsCount)
+
+      expect(getAllByRole('gridcell')[3].textContent).toBe('c')
+      expect(getAllByRole('gridcell')[6].textContent).toBe('d')
+      expect(getAllByRole('gridcell')[11].textContent).toBe('a')
+      expect(getAllByRole('gridcell')[14].textContent).toBe('b')
     })
   })
 
@@ -529,21 +890,7 @@ describe('Table.tsx', () => {
         ...tableProps,
         columns: [
           { name: 'colname1', label: 'col1' },
-          {
-            name: 'colname2',
-            label: 'col2',
-            filterable: true,
-            cell_type: {
-              tag: {
-                name: 'tags',
-                tags: [
-                  { label: 'TAG1', color: 'red' },
-                  { label: 'TAG2', color: 'green' },
-                  { label: 'TAG3', color: 'blue' },
-                ]
-              }
-            }
-          },
+          tagsColumn
         ],
         rows: [
           { name: 'rowname1', cells: [cell11, 'TAG1'] },
@@ -591,7 +938,7 @@ describe('Table.tsx', () => {
 
       fireEvent.click(container.querySelector('.ms-DetailsHeader-filterChevron')!)
       fireEvent.click(getAllByText('TAG1')[1].parentElement!)
-      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'filter', { 'colname2': ['TAG1'] })
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'filter', { 'tagsColumn': ['TAG1'] })
       expect(emitMock).toHaveBeenCalledTimes(1)
     })
   })
@@ -711,9 +1058,19 @@ describe('Table.tsx', () => {
       expect(getAllByRole('row')).toHaveLength(headerRow + tableProps.rows!.length)
     })
 
-    it('Does not render group by dropdown when pagination is set', () => {
-      const { queryByTestId } = render(<XTable model={{ ...tableProps, pagination: { total_rows: 10, rows_per_page: 5 } }} />)
+    it('Does not render group by dropdown when groups are set but pagination is not', () => {
+      const { queryByTestId } = render(<XTable model={{ ...tableProps, groups: [] }} />)
       expect(queryByTestId('groupby')).not.toBeInTheDocument()
+    })
+
+    it('Fires event when pagination enabled', () => {
+      const { getByTestId, getAllByText } = render(<XTable model={{ ...tableProps, pagination: { total_rows: 10, rows_per_page: 5 }, events: ['group_by'] }} />)
+
+      fireEvent.click(getByTestId('groupby'))
+      fireEvent.click(getAllByText('Col1')[1]!)
+
+      expect(emitMock).toHaveBeenCalledWith(tableProps.name, 'group_by', 'colname1')
+      expect(emitMock).toHaveBeenCalledTimes(1)
     })
 
     it('Renders alphabetically sorted group by list - strings', () => {
@@ -1042,6 +1399,24 @@ describe('Table.tsx', () => {
       fireEvent.click(container.querySelector('.ms-DetailsHeader-cellTitle')!)
       fireEvent.click(getByText('Reset table'))
       expect(container.querySelector("[data-icon-name='SortUp']")!).not.toBeInTheDocument()
+    })
+
+    it('Does not keep sort after reset', () => {
+      const { container, getByText, getAllByRole } = render(<XTable model={{ ...tableProps, resettable: true }} />)
+
+      expect(getAllByRole('gridcell')[0].textContent).toBe('Quick brown fox.')
+      expect(getAllByRole('gridcell')[2].textContent).toBe('Jumps over a dog.')
+      expect(getAllByRole('gridcell')[4].textContent).toBe('Wooo hooo.')
+
+      fireEvent.click(container.querySelector('.ms-DetailsHeader-cellTitle')!)
+      expect(getAllByRole('gridcell')[0].textContent).toBe('Jumps over a dog.')
+      expect(getAllByRole('gridcell')[2].textContent).toBe('Quick brown fox.')
+      expect(getAllByRole('gridcell')[4].textContent).toBe('Wooo hooo.')
+
+      fireEvent.click(getByText('Reset table'))
+      expect(getAllByRole('gridcell')[0].textContent).toBe('Quick brown fox.')
+      expect(getAllByRole('gridcell')[2].textContent).toBe('Jumps over a dog.')
+      expect(getAllByRole('gridcell')[4].textContent).toBe('Wooo hooo.')
     })
   })
 

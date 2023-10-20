@@ -58,19 +58,17 @@ q.page['example'] = ui.form_card(box='1 1 5 3', items=[
 
 ## With selection
 
-If `multiple` is set to False (default), each row in the table is clickable. When a cell in the column with `link=True`
-(defaults to first column) is clicked or the row is doubleclicked, the form is
-submitted automatically and `q.args.table_name` is set to `[row_name]`, where
-`table_name` is the `name` of the table, and `row_name` is the `name` of the row that was clicked.
-Note that doubleclicking the row if single selection is active results in submission as well.
+By default, each row in the table is clickable. When a cell in the column with `link=True`
+(defaults to first column) is clicked, the form is submitted automatically and `q.args.table_name` is set to `[row_name]`,
+where `table_name` is the `name` attribute of the table, and `row_name` is the `name` attribute of the row that was clicked.
+Double-clicking the row results in submission as well.
 
-If `multiple` is set to `True`, each row in the table is selectable. A row can be selected by
-clicking on it.
-Multiple rows can be selected either by shift+clicking or using marquee selection. When the form
-is submitted, `q.args.table_name` is set to `[row1_name, row2_name, ...]` where `table_name` is the
-`name` of the table, and `row1_name`, `row2_name` are the `name` of the rows that were selected. Note
-that if `multiple` is set to `True`, the form is not submitted automatically and one or more buttons in the form are
-required to trigger submission.
+If multiple or single selection is activated (`multiple` or `single` is set to `True`), doubleclicking is turned off.
+In addition, each row in the table gets its own checkmark indicating current selection state which can be obtained either by providing a [separate submission button](/docs/examples/table-select-multiple) (populated in `q.args`) or by registering a `'select'` [event](/docs/examples/table-events-select) (populated in `q.events`).
+
+### With multiple selection
+
+If `multiple` is set to `True`, multiple rows can be selected either by clicking on the checkmarks, shift+clicking or ctrl+clicking anywhere on the row or using marquee selection.
 
 ```py
 q.page['example'] = ui.form_card(box='1 1 3 4', items=[
@@ -85,7 +83,32 @@ q.page['example'] = ui.form_card(box='1 1 3 4', items=[
 ])
 ```
 
-When `multiple` is specified, there is an option to control when should row checkboxes be visible.
+When the form is submitted, `q.args.<table_name>` is set to `[<row1_name>, <row2_name>, ...]` where `table_name` is the
+`name` of the table, and `row1_name`, `row2_name` are the `name` of the rows that were selected.
+
+### With single selection
+
+When `single` is set to `True` only one row at time can be selected.
+
+```py
+q.page['example'] = ui.form_card(box='1 1 3 4', items=[
+    ui.table(name='table', single=True, columns=[
+        ui.table_column(name='name', label='Name'),
+        ui.table_column(name='surname', label='Surname'),
+    ], rows=[
+        ui.table_row(name='row1', cells=['John', 'Doe']),
+        ui.table_row(name='row2', cells=['Alice', 'Smith']),
+        ui.table_row(name='row3', cells=['Bob', 'Adams']),
+    ])
+])
+```
+
+When the form is submitted, `q.args.<table_name>` is set to `[<row_name>]` where `table_name` is the
+`name` of the table, and `row_name` is the `name` of the row that was selected.
+
+### Checkbox visibility
+
+When `multiple` or `single` is specified, there is an option to control when should row checkboxes be visible.
 By default, they are only visible on hover. Available options are `always`, `on-hover`, `hidden`.
 
 ```py
@@ -102,14 +125,38 @@ q.page['example'] = ui.form_card(box='1 1 3 4', items=[
 ])
 ```
 
-## With preselection
+### Select event
 
-If you want to see some rows preselected, use the `values` attribute. Note that if this parameter is set,
-multiple selections will be allowed (`multiple=True` implicitly).
+Sometimes it can be useful to update other components immediately based on the current row selection (e.g. enable/disable the submit button).
+This is where the `select` event comes into the game. When the `select` event is registered, it is emitted every time when there is a change
+in the current table row selection. It can be accessed through `q.events.<table_name>.select` and contains the list of all selected item names, where `table_name`
+is the `name` attribute of the table.
 
 ```py
 q.page['example'] = ui.form_card(box='1 1 3 4', items=[
-    ui.table(name='table', values=['row1'], columns=[
+    ui.table(
+        name='table',
+        columns=[ui.table_column(name='text', label='Table select event')],
+        rows=[
+            ui.table_row(name='row1', cells=['Row 1']),
+            ui.table_row(name='row2', cells=['Row 2']),
+            ui.table_row(name='row3', cells=['Row 3'])
+        ],
+        multiple=True,
+        events=['select']
+    )
+])
+```
+
+## With preselection
+
+If you want to have one or multiple rows preselected, use either `value` or `values` attribute.
+
+When `values` attribute is set, multiple selections will be allowed (`multiple=True` implicitly).
+
+```py
+q.page['example'] = ui.form_card(box='1 1 3 4', items=[
+    ui.table(name='table', values=['row1', 'row3'], columns=[
         ui.table_column(name='name', label='Name'),
         ui.table_column(name='surname', label='Surname'),
     ], rows=[
@@ -117,6 +164,21 @@ q.page['example'] = ui.form_card(box='1 1 3 4', items=[
         ui.table_row(name='row2', cells=['Alice', 'Smith']),
         ui.table_row(name='row3', cells=['Bob', 'Adams']),
     ])
+])
+```
+
+When specifying the `value` attribute, only one row can be preselected and single selections will be allowed (`single=True` implicitly).
+
+```py
+q.page['example'] = ui.form_card(box='1 1 3 4', items=[
+    ui.table(name='table', columns=[
+        ui.table_column(name='name', label='Name'),
+        ui.table_column(name='surname', label='Surname'),
+    ], rows=[
+        ui.table_row(name='row1', cells=['John', 'Doe']),
+        ui.table_row(name='row2', cells=['Alice', 'Smith']),
+        ui.table_row(name='row3', cells=['Bob', 'Adams']),
+    ], value='row2')
 ])
 ```
 
@@ -228,6 +290,21 @@ so we discourage its use in favor of more static units like `px` or `rem`.
 ```py
 q.page['example'] = ui.form_card(box='1 1 3 3', items=[
     ui.table(name='table', width='200px', height='200px', columns=[
+        ui.table_column(name='name', label='Name'),
+        ui.table_column(name='surname', label='Surname'),
+    ], rows=[
+        ui.table_row(name='row1', cells=['John', 'Doe']),
+        ui.table_row(name='row2', cells=['Alice', 'Smith']),
+        ui.table_row(name='row3', cells=['Bob', 'Adams']),
+    ])
+])
+```
+
+To fill all of the remaining card height, set the `height` attribute to `1`.
+
+```py
+q.page['example'] = ui.form_card(box='1 1 3 3', items=[
+    ui.table(name='table', height='1', columns=[
         ui.table_column(name='name', label='Name'),
         ui.table_column(name='surname', label='Surname'),
     ], rows=[

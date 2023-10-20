@@ -3,23 +3,37 @@ import os
 import os.path
 import re
 import shutil
-import subprocess
+import socket
 import sys
+import uuid
+from asyncio.subprocess import Process
+from asyncio import create_subprocess_exec
+from contextlib import closing
 from pathlib import Path
 from string import Template
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from h2o_wave import Q, app, main, ui
+from h2o_wave import Q, app, handle_on, main, on, ui
+
 example_dir = os.path.dirname(os.path.realpath(__file__))
 tour_tmp_dir = os.path.join(example_dir, '_tour_apps_tmp')
 
 _base_url = os.environ.get('H2O_WAVE_BASE_URL', '/')
 _app_address = urlparse(os.environ.get('H2O_WAVE_APP_ADDRESS', 'http://127.0.0.1:8000'))
-_app_host = _app_address.hostname
-_app_port = '10102'
 default_example_name = 'hello_world'
-vsc_extension_path = os.path.join('..', '..', 'tools', 'vscode-extension')
+vsc_extension_path = os.path.join(example_dir, '..', '..', 'tools', 'vscode-extension')
+
+
+def scan_free_port(port: int):
+    while True:
+        # If we run out of ports, wrap around.
+        if port > 60000:
+            port = 10000
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            if sock.connect_ex(('localhost', port)):
+                return port
+        port += 1
 
 
 class Example:
@@ -31,9 +45,9 @@ class Example:
         self.source = source
         self.previous_example: Optional[Example] = None
         self.next_example: Optional[Example] = None
-        self.process: Optional[subprocess.Popen] = None
+        self.process: Optional[Process] = None
 
-    async def start(self, filename: str, code: str):
+    async def start(self, filename: str, is_app: bool, q: Q):
         env = os.environ.copy()
         env['H2O_WAVE_BASE_URL'] = _base_url
         env['H2O_WAVE_ADDRESS'] = os.environ.get('H2O_WAVE_ADDRESS', 'http://127.0.0.1:10101')
@@ -41,24 +55,23 @@ class Example:
         # inside python during initialization if %PATH% is configured, but without %SYSTEMROOT%.
         if sys.platform.lower().startswith('win'):
             env['SYSTEMROOT'] = os.environ['SYSTEMROOT']
-        if code.find('@app(') > 0:
-            env['H2O_WAVE_APP_ADDRESS'] = f'http://{_app_host}:{_app_port}'
-            self.process = subprocess.Popen([
+        if is_app:
+            q.app.app_port = scan_free_port(q.app.app_port)
+            env['H2O_WAVE_APP_ADDRESS'] = f'http://{_app_address.hostname}:{q.app.app_port}'
+            cmd = [
                 sys.executable, '-m', 'uvicorn',
                 '--host', '0.0.0.0',
-                '--port', _app_port,
+                '--port', str(q.app.app_port),
                 f'examples.{filename.replace(".py", "")}:main',
-            ], env=env)
+            ]
+            self.process = await create_subprocess_exec(*cmd, env=env)
         else:
-            self.process = subprocess.Popen([sys.executable, os.path.join(example_dir, filename)], env=env)
+            self.process = await create_subprocess_exec(sys.executable, os.path.join(example_dir, filename), env=env)
 
     async def stop(self):
         if self.process and self.process.returncode is None:
             self.process.terminate()
-            self.process.wait()
-
-
-active_example: Optional[Example] = None
+            await self.process.wait()
 
 
 def read_lines(p: str) -> List[str]:
@@ -166,6 +179,9 @@ def load_examples(filenames: List[str]) -> Dict[str, Example]:
 
 
 app_title = 'H2O Wave Tour'
+header_height = 76
+blurb_height = 56
+mobile_blurb_height = 76
 
 
 async def setup_page(q: Q):
@@ -184,6 +200,7 @@ async def setup_page(q: Q):
             py_content = f.read()
         with open(os.path.join(vsc_extension_path, 'server', 'utils.py'), 'r') as f:
             py_content += f.read()
+
     if py_content:
         py_content += '''
 def get_wave_completions(line, character, file_content):
@@ -219,35 +236,57 @@ def get_wave_completions(line, character, file_content):
         scripts=[ui.script(q.app.tour_assets + '/loader.min.js')],
         script=ui.inline_script(content=template, requires=['require'], targets=['monaco-editor']),
         layouts=[
-            ui.layout(breakpoint='xs', zones=[
+            ui.layout(
+                breakpoint='xs',
+                zones=[
+                    ui.zone('mobile_header'),
+                    ui.zone('main',
+                            zones=[
+                                ui.zone('code', size=f'calc(50vh - {(header_height + mobile_blurb_height) / 2}px)'),
+                                ui.zone('preview', size=f'calc(50vh - {(header_height + mobile_blurb_height) / 2}px)'),
+                            ]),
+                    ui.zone('mobile_blurb')
+                ],
+            ),
+            ui.layout(breakpoint='m', zones=[
                 ui.zone('header'),
                 ui.zone('blurb'),
-                ui.zone('main', size='calc(100vh - 140px)', direction=ui.ZoneDirection.ROW, zones=[
-                    ui.zone('code'),
-                    ui.zone('preview')
-                ])
-            ])
+                ui.zone('main', size=f'calc(100vh - {header_height + blurb_height}px)', direction=ui.ZoneDirection.ROW,
+                        zones=[
+                            ui.zone('code'),
+                            ui.zone('preview')
+                        ])
+            ]),
         ])
+    nav_links = [
+        ('docs', 'Wave docs', 'https://wave.h2o.ai/docs/getting-started'),
+        ('discussions', 'Discussions', 'https://github.com/h2oai/wave/discussions'),
+        ('blog', 'Blog', 'https://wave.h2o.ai/blog'),
+        ('cloud', 'H2O AI Cloud', 'https://h2o.ai/platform/ai-cloud/'),
+        ('h2o', 'H2O', 'https://www.h2o.ai/'),
+    ]
     q.page['header'] = ui.header_card(
         box='header',
         title=app_title,
         subtitle=f'{len(catalog)} Interactive Examples',
         image=f'{q.app.tour_assets}/h2o-logo.svg',
         items=[
-            ui.links(inline=True, items=[
-                ui.link(label='Wave docs', path='https://wave.h2o.ai/docs/getting-started', target='_blank'),
-                ui.link(label='Discussions', path='https://github.com/h2oai/wave/discussions', target='_blank'),
-                ui.link(label='Blog', path='https://wave.h2o.ai/blog', target='_blank'),
-                ui.link(label='H2O AI Cloud', path='https://h2o.ai/platform/ai-cloud/', target='_blank'),
-                ui.link(label='H2O', path='https://www.h2o.ai/', target='_blank'),
-            ])
-        ]
-    )
+            ui.links(inline=True, items=[ui.link(label=link[1], path=link[2], target='_blank') for link in nav_links])
+        ])
+    q.page['mobile_header'] = ui.header_card(
+        box='mobile_header',
+        title=app_title,
+        subtitle=f'{len(catalog)} Interactive Examples',
+        image=f'{q.app.tour_assets}/h2o-logo.svg',
+        nav=[
+            ui.nav_group('Links', items=[ui.nav_item(name=link[0], label=link[1], path=link[2]) for link in nav_links])
+        ])
     q.page['blurb'] = ui.section_card(box='blurb', title='', subtitle='', items=[])
+    q.page['mobile_blurb'] = ui.form_card(box='mobile_blurb', items=[])
     q.page['code'] = ui.markup_card(
-        box=ui.box('code', height='calc(100vh - 140px)'),
+        box='code',
         title='',
-        content='<div id="monaco-editor" style="position: absolute; top: 45px; bottom: 15px; right: 15px; left: 15px"/>'
+        content='<div id="monaco-editor" style="position: absolute; top: 45px; bottom: 15px; right: 15px; left: 2px"/>'
     )
     # Put tmp placeholder <div></div> to simulate blank screen.
     q.page['preview'] = ui.frame_card(box='preview', title='Preview', content='<div></div>')
@@ -255,7 +294,7 @@ def get_wave_completions(line, character, file_content):
 
 
 def make_blurb(q: Q):
-    example = q.user.active_example
+    example = q.client.active_example
     blurb_card = q.page['blurb']
     blurb_card.title = example.title
     blurb_card.subtitle = example.description
@@ -263,41 +302,47 @@ def make_blurb(q: Q):
     items = [ui.dropdown(name=q.args['#'] or default_example_name, width='300px', value=example.name, trigger=True,
                          choices=[ui.choice(name=e.name, label=e.title) for e in catalog.values()])]
     if example.previous_example:
-        items.append(ui.button(name=f'#{example.previous_example.name}', label='Previous'))
+        items.append(ui.button(name=f'#{example.previous_example.name}', label='Prev'))
     if example.next_example:
         items.append(ui.button(name=f'#{example.next_example.name}', label='Next', primary=True))
     blurb_card.items = items
+    q.page['mobile_blurb'].items = [ui.inline(direction='row', justify='center', items=items)]
 
 
 async def show_example(q: Q, example: Example):
     # Clear demo page
-    demo_page = q.site['/demo']
+    demo_page = q.site[f'/{q.client.path}']
     demo_page.drop()
     await demo_page.save()
 
-    filename = os.path.join(tour_tmp_dir, 'tmp.py')
+    filename = os.path.join(tour_tmp_dir, f'{q.client.path}.py')
     code = q.events.editor.change if q.events.editor else example.source
     code = code.replace("`", "\\`")
+    is_app = '@app(' in code
     with open(filename, 'w') as f:
-        f.write(code)
-    filename = '.'.join([tour_tmp_dir, 'tmp.py']).split(os.sep)[-1] if code.find('@app(') > 0 else filename
+        fixed_path = code
+        if is_app:
+            fixed_path = fixed_path.replace("@app('/demo')", f"@app('/{q.client.path}')")
+        else:
+            fixed_path = fixed_path.replace("site['/demo']", f"site['/{q.client.path}']")
+        f.write(fixed_path)
+    if is_app:
+        filename = '.'.join([tour_tmp_dir, f'{q.client.path}.py']).split(os.sep)[-1]
 
     # Stop active example, if any.
-    active_example = q.user.active_example
+    active_example = q.client.active_example
     if active_example:
         await active_example.stop()
 
     # Start new example
-    await example.start(filename, code)
-    q.user.active_example = example
+    await example.start(filename, is_app, q)
+    q.client.active_example = example
 
     # Update example blurb
     make_blurb(q)
 
-    preview_card = q.page['preview']
-
     # Update preview title
-    preview_card.title = f'Preview of {example.filename}'
+    q.page['preview'].title = f'Preview of {example.filename}'
     q.page['code'].title = example.filename
     await q.page.save()
 
@@ -312,12 +357,13 @@ async def show_example(q: Q, example: Example):
         q.page['meta'].script = ui.inline_script(f'editor.setValue(`{code}`)', requires=['editor'])
         await q.page.save()
         if q.args['#']:
-            q.page['meta'].script = ui.inline_script('editor.setScrollPosition({ scrollTop: 0 }); editor.focus()', requires=['editor'])
+            q.page['meta'].script = ui.inline_script('editor.setScrollPosition({ scrollTop: 0 }); editor.focus()',
+                                                     requires=['editor'])
 
     # HACK
     # The ?e= appended to the path forces the frame to reload.
     # The url param is not actually used.
-    preview_card.path = f'{_base_url}demo?e={example.name}'
+    q.page['preview'].path = f'{_base_url}{q.client.path}?e={example.name}'
     await q.page.save()
 
 
@@ -335,9 +381,20 @@ async def on_shutdown():
         shutil.rmtree(dirpath)
 
 
+@on("@system.client_disconnect")
+async def client_disconnect(q: Q):
+    demo_page = q.site[f'/{q.client.path}']
+    demo_page.drop()
+    await demo_page.save()
+
+    if q.client.active_example:
+        await q.client.active_example.stop()
+
+
 @app('/tour', on_startup=on_startup, on_shutdown=on_shutdown)
 async def serve(q: Q):
     if not q.app.initialized:
+        q.app.app_port = 10102
         q.app.tour_assets, = await q.site.upload_dir(os.path.join(example_dir, 'tour-assets'))
         base_snippets_path = os.path.join(example_dir, 'base-snippets.json')
         component_snippets_path = os.path.join(example_dir, 'component-snippets.json')
@@ -354,7 +411,10 @@ async def serve(q: Q):
     if not q.client.initialized:
         q.client.initialized = True
         q.client.is_first_load = True
+        q.client.path = uuid.uuid4()
         await setup_page(q)
+
+    await handle_on(q)
 
     search = q.args[q.args['#'] or default_example_name]
     if search and not q.events.editor:

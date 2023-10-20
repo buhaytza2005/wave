@@ -23,6 +23,7 @@ import DateFnsUtils from '@date-io/date-fns'
 import { VirtualElement } from '@popperjs/core/lib'
 import { CalendarOrClockPickerView } from '@mui/x-date-pickers/internals/models'
 import { format } from 'date-fns'
+import { Z_INDEX } from './parts/styleConstants'
 
 /**
  * Create a time picker.
@@ -81,6 +82,7 @@ const
   popoverProps: Partial<PopperProps> | undefined = {
     placement: 'bottom-start',
     sx: {
+      zIndex: Z_INDEX.TIME_PICKER,
       '& .MuiPaper-root': {
         borderRadius: '2px',
         boxShadow: `${cssVar('$text1')} 0px 6.4px 14.4px 0px, ${cssVar('$text2')} 0px 1.2px 3.6px 0px`
@@ -139,19 +141,29 @@ export const
       [value, setValue] = React.useState(m.value ? parseTimeStringToDate(m.value) : null),
       [isDialogOpen, setIsDialogOpen] = React.useState(false),
       textInputRef = React.useRef<HTMLDivElement | null>(null),
+      popperRef = React.useRef<HTMLDivElement | null>(null),
       switchAmPm = () => {
         setValue((prevValue) => {
           const date = new Date(prevValue!)
           date.setTime(date.getTime() + 12 * 60 * 60 * 1000)
+          wave.args[m.name] = formatDateToTimeString(date, '24')
           return date
         })
       },
-      onSelectTime = (time: D | null) => {
-        wave.args[m.name] = time ? formatDateToTimeString(time, '24') : null
-        if (m.trigger) wave.push()
+      onChangeTime = (time: unknown) => {
+        if (time instanceof Date) {
+          wave.args[m.name] = formatDateToTimeString(time, '24')
+          setValue(time)
+        }
       },
+      onSelectTime = () => { if (m.trigger) wave.push() },
       // HACK: https://stackoverflow.com/questions/70106353/material-ui-date-time-picker-safari-browser-issue
       onOpen = () => setTimeout(() => (document.activeElement as HTMLElement)?.blur()),
+      onBlur = (ev: React.FocusEvent) => {
+        // Close the popover if the side panel or dialog opens.
+        // TODO: Investigate why MUI dismiss on outer click handling doesn't work in this case.
+        if (!ev.relatedTarget || !Fluent.elementContains(popperRef.current, ev.relatedTarget as HTMLElement)) setIsDialogOpen(false)
+      },
       { palette: fluentPalette } = Fluent.useTheme(),
       themeObj = {
         palette: {
@@ -205,20 +217,24 @@ export const
                 value={value}
                 label={label}
                 open={isDialogOpen}
-                onChange={value => setValue(value as Date)}
-                onAccept={value => onSelectTime(value as Date)}
+                onChange={onChangeTime}
+                onAccept={onSelectTime}
                 onClose={() => setIsDialogOpen(false)}
                 ampm={hour_format === '12'}
                 showToolbar
                 ToolbarComponent={({ parsedValue, setOpenView, ampm }) =>
-                  <Toolbar
-                    setOpenView={setOpenView}
-                    time={parsedValue ? formatDateToTimeString(parsedValue as D, ampm ? '12' : '24') : parsedValue as null}
-                    label={label}
-                    switchAmPm={switchAmPm}
-                  />
+                  // Traps focus inside the popover.
+                  // TODO: Check why focus gets back to the textfield after opening the popover from dialog.
+                  <Fluent.FocusTrapZone isClickableOutsideFocusTrap>
+                    <Toolbar
+                      setOpenView={setOpenView}
+                      time={parsedValue ? formatDateToTimeString(parsedValue as D, ampm ? '12' : '24') : parsedValue as null}
+                      label={label}
+                      switchAmPm={switchAmPm}
+                    />
+                  </Fluent.FocusTrapZone>
                 }
-                PopperProps={{ anchorEl: () => textInputRef.current as VirtualElement, ...popoverProps }}
+                PopperProps={{ ref: popperRef, anchorEl: () => textInputRef.current as VirtualElement, onBlur, ...popoverProps }}
                 minTime={min ? parseTimeStringToDate(min) : undefined}
                 maxTime={max ? parseTimeStringToDate(max) : undefined}
                 minutesStep={allowedMinutesSteps[minutes_step]}

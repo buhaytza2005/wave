@@ -49,6 +49,7 @@ There are three types of data buffers:
 - **Array buffers** hold tabular data with a fixed number of rows, and allow random access to rows using 0-based integers as keys.
 - **Cyclic buffers** also hold tabular data with a fixed number of rows, but do not allow random access to rows. They can only be appended to. Rows are first-in first-out (FIFO), and adding rows beyond its capacity overwrites the oldest rows.
 - **Map buffers** (or dictionary buffers) hold tabular data with a variable number of rows, and allow random access to rows using string keys.
+- **List buffers** (or dynamic array buffers) hold tabular data with a variable number of rows, allow random access to rows using 0-based integers as keys (negative indexing supported), and allow appending via `+=` operator.
 
 :::caution
 Map buffers are convenient to use, but use more memory on the server compared to array buffers and cyclic buffers, so use them sparingly.
@@ -62,14 +63,15 @@ Use the `data()` function to declare a data buffer. The Wave server uses this de
 
 - `fields`: The names of columns, in order; a space-separated string or a list or a tuple (`'foo bar'` or `['foo', 'bar']` or `('foo', 'bar')`.
 - `size`: The number of rows to allocate.
-    - A positive row count creates an array buffer.
-    - A negative row count creates a cyclic buffer.
-    - A zero row count (or `None`) creates a map buffer.
+  - A positive row count creates an array buffer.
+  - A negative row count creates a cyclic buffer.
+  - A zero row count (or `None`) creates a map buffer.
 - `rows`: A `dict` or `list` of rows to initialize the data buffer with. Each row can be a list or tuple.
-    - For array or cyclic buffers, pass a list of rows.
-    - For map buffers, pass a dict with strings as keys and rows as values.
+  - For array or cyclic buffers, pass a list of rows.
+  - For map buffers, pass a dict with strings as keys and rows as values.
 - `columns`: A `list` of columns to initialize the data buffer with. All columns must be of the same length. The columns are automatically transposed to `rows`.
 - `pack`: `True` to pack (compress) the provided rows or columns, use less memory on the server-side, and improve performance. Set `pack=True` if you intend to never make any changes to the data buffer once created. Defaults to `False`.
+- `t`: Buffer type. One of 'list', 'map', 'cyclic' or 'fixed'. Overrides the buffer type inferred from the size.
 
 ## Buffers in practice
 
@@ -84,12 +86,16 @@ b = data(fields='donut price', size=-5)
 
 # Map buffer
 b = data(fields='donut price')
+
+# List buffer
+b = data(fields='donut price', t='list')
 ```
 
 Declare and initialize a 5-row buffer with columns `donut` and `price`.
+
 ```py
 # Array buffer
-b = data(fields='donut price', size=5, rows=[
+data(fields='donut price', size=5, rows=[
     ['cream', 3.99],
     ['custard', 2.99],
     ['cinnamon', 2.49],
@@ -98,7 +104,7 @@ b = data(fields='donut price', size=5, rows=[
 ])
 
 # Cyclic buffer
-b = data(fields='donut price', size=-5, rows=[
+data(fields='donut price', size=-5, rows=[
     ['cream', 3.99],
     ['custard', 2.99],
     ['cinnamon', 2.49],
@@ -107,13 +113,40 @@ b = data(fields='donut price', size=-5, rows=[
 ])
 
 # Map buffer
-b = data(fields='donut price', rows=dict(
+data(fields='donut price', rows=dict(
     crm=['cream', 3.99],
     cst=['custard', 2.99],
     cin=['cinnamon', 2.49],
     spr=['sprinkles', 2.49],
     sug=['sugar', 1.99],
 ))
+
+# List buffer
+data(fields='donut price', t='list', rows=[ 
+    ['cream', 3.99],
+    ['custard', 2.99],
+    ['cinnamon', 2.49],
+    ['sprinkles', 2.49],
+    ['sugar', 1.99],
+ ])
+```
+
+A buffer can only be modified via card. To get a reference to the buffer:
+
+```py
+page['example'] = ui.plot_card(
+    box='1 1 4 5',
+    title='Line',
+    data=data(fields='donut price', size=5, rows=[
+        ['cream', 3.99],
+        ['custard', 2.99],
+        ['cinnamon', 2.49],
+        ['sprinkles', 2.49],
+        ['sugar', 1.99],
+    ])
+    plot=ui.plot([ui.mark(type='line', x_scale='time', x='=year', y='=value', y_min=0)])
+)
+b = page['example'].data
 ```
 
 Modify a buffer row:
@@ -123,31 +156,42 @@ Modify a buffer row:
 b[2] = ['cinnamon', 2.99]
 
 # Cyclic buffer
-b[-1] = ['fruit', 2.99] # replaces ['sugar', 1.99]
+# Appends to the end, shifts all elements by 1,
+# dropping the first one as it would be the 6th element.
+b[-1] = ['fruit', 2.99]
 
 # Map buffer (the following two forms are equivalent)
 b['cin'] = ['cinnamon', 2.99]
 b.cin = ['cinnamon', 2.99]
+
+# List buffer
+b[2] += ['fruit', 2.99]
+b[-2] += ['fruit', 2.99] # Modify second index from the end.
 ```
 
 Modify a buffer value:
 
 ```py
-# Array buffer (the following two forms are equivalent)
+# Array and list buffer (the following two forms are equivalent).
 b[2]['price'] = 2.99
 b[2].price = 2.99
 
-# Cyclic buffer (the following two forms are equivalent)
-b[-1]['price'] = 2.99 # last donut on menu now costs 2.99
-b[-1].price = 2.99
-
-# Map buffer (the following three forms are equivalent)
+# Map buffer (the following three forms are equivalent).
 b['cin']['price'] = 2.99
 b['cin'].price = 2.99
 b.cin.price = 2.99
+
+# List buffer (the following two forms are equivalent)
+b[2]['price'] = 2.99 # third donut on menu now costs 2.99
+b[2].price = 2.99
+
+b[-1]['price'] = 2.99 # last donut from end on menu now costs 2.99
+b[-1].price = 2.99
 ```
 
 ## Packed buffers
+
+The following is true for Wave scripts only. Unicast apps do not store data buffers on server unless started with `-editable` option.
 
 If you intend to create tabular data once and never change individual rows or values, it is better to avoid allocating memory on the server by using a *packed buffer*. Packed buffers use less memory on the server and improve performance. To create a packed buffer, use `data(..., pack=True)`. Note that `size` is not required, and is ignored if provided.
 

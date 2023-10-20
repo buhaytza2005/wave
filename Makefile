@@ -10,11 +10,11 @@ SED=$(shell command -v gsed || command -v sed)
 all: clean setup build ## Setup and build everything
 
 setup: ## Set up development dependencies
-	cd ui && $(MAKE) setup
+	$(MAKE) setup-ui
+	$(MAKE) setup-vsc
 	cd py && $(MAKE) setup
 	cd tools/wavegen && $(MAKE) setup build
 	cd tools/showcase && $(MAKE) setup
-	cd tools/vscode-extension && $(MAKE) setup
 
 clean: ## Clean
 	rm -rf build
@@ -25,9 +25,21 @@ clean: ## Clean
 	rm -f waved
 
 setup-ts: ## Set up NPM package and symlinks
-	cd ts && npm ci && npm run build
+	cd ts && npm ci && npm run build-dev
 	cd ts && npm link
 	cd ui && npm link h2o-wave
+
+setup-ui:
+	cd ui && $(MAKE) setup
+
+setup-py-tests:
+	cd py && $(MAKE) setup-tests
+
+setup-vsc:
+	cd tools/vscode-extension && $(MAKE) setup
+
+setup-e2e:
+	cd e2e && $(MAKE) setup
 
 .PHONY: build
 build: build-ui build-server ## Build everything
@@ -52,8 +64,8 @@ build-apps: ## Prepare apps for HAC upload.
 	cp -r py/apps/* py/tmp/
 	find py/tmp -type f -name '*.toml' -exec $(SED) -i -e "s/{{VERSION}}/$(VERSION)/g" {} \;
 	find py/tmp -type f -name 'requirements.txt' -exec $(SED) -i -e "s/{{VERSION}}/$(VERSION)/g" {} \;
-	rsync -a py/examples py/tmp/tour --exclude "*.idea*" --exclude "*__pycache__*" --exclude "*.mypy_cache*"
-	rsync -a py/demo py/tmp/dashboard --exclude "*.idea*" --exclude "*__pycache__*" --exclude "*.mypy_cache*"
+	rsync -a py/examples py/tmp/tour --exclude "*.idea*" --exclude "*__pycache__*" --exclude "*.mypy_cache*" --exclude "dist" --exclude "build"
+	rsync -a py/demo py/tmp/dashboard --exclude "*.idea*" --exclude "*__pycache__*" --exclude "*.mypy_cache*" --exclude "dist" --exclude "build"
 	cp py/examples/theme_generator.py py/tmp/theme-generator
 	cp tools/vscode-extension/base-snippets.json py/tmp/tour/examples
 	cp tools/vscode-extension/component-snippets.json py/tmp/tour/examples
@@ -80,6 +92,15 @@ test-py-ci: ## Run Python unit tests in CI mode
 
 test-vsc-ci: ## Run Python unit tests in CI mode
 	cd tools/vscode-extension && $(MAKE) test
+
+test-intellij-ci:
+	cd tools/intellij-plugin && $(MAKE) test
+
+test-e2e-ci:
+	cd e2e && $(MAKE) test
+
+test-e2e-macos-ci:
+	cd e2e && $(MAKE) test-macos
 
 test-ui-watch: ## Run UI unit tests
 	cd ui && $(MAKE) test
@@ -112,7 +133,7 @@ build-server-micro: ## Build smaller (~2M instead of ~10M) server executable
 	go build -ldflags '-s -w -X main.Version=$(VERSION) -X main.BuildDate=$(BUILD_DATE)' -o waved cmd/wave/main.go
 	upx --brute waved
 
-build-py: ## Build h2o_wave wheel
+build-py: ## Build h2o_wave, h2o_lightwave and h2o_lightwave_web wheel.
 	cd py && $(MAKE) build
 
 build-docker:
@@ -156,12 +177,12 @@ release-nightly: build-ui ## Prepare nightly release builds.
 	$(MAKE) OS=darwin ARCH=amd64 release-os
 	$(MAKE) OS=darwin ARCH=arm64 release-os
 	$(MAKE) OS=windows ARCH=amd64 EXE_EXT=".exe" release-os
-	$(MAKE) build-py
+	cd py && $(MAKE) build-wave
 	$(MAKE) build-r-nightly
 
 publish-release-s3:
 	aws s3 sync build/ s3://h2o-wave/releases --acl public-read --exclude "*" --include "*.tar.gz"
-	aws s3 sync py/dist/ s3://h2o-wave/releases --acl public-read --exclude "*" --include "*.whl"
+	aws s3 sync py/h2o_wave/dist/ s3://h2o-wave/releases --acl public-read --exclude "*" --include "*.whl"
 	aws s3 sync r/build/ s3://h2o-wave/releases --acl public-read --exclude "*" --include "*.tar.gz"
 
 publish-apps-s3-mc:
@@ -205,9 +226,16 @@ publish-vsc-extension: ## Publish VS Code extension
 publish-university:
 	cd university && $(MAKE) publish
 	
+publish-lightwave:
+	cd ui && npm ci && npm run build
+	cd py && $(MAKE) setup
+	cd py && $(MAKE) build-lightwave
+	cd py && $(MAKE) build-lightwave-web
+	
 .PHONY: tag
 tag: ## Bump version and tag
 	cd py && $(MAKE) tag
+	cd ui && $(MAKE) tag
 	cd r && $(MAKE) tag
 	cd tools/vscode-extension && $(MAKE) tag
 	cd tools/intellij-plugin && $(MAKE) tag

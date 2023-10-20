@@ -68,7 +68,8 @@ type DropdownItem = {
   text: S
   idx: U
   checked: B
-  show: B
+  show: B,
+  disabled: B
 }
 
 const
@@ -105,26 +106,23 @@ const
             m.value = optionKey
           }
         }
-        if (trigger) wave.push()
+
+        // HACK: Push clears args so run it after useEffect sets them due to model.value change.
+        if (trigger) setTimeout(() => wave.push(), 0)
       },
-      selectAll = () => {
+      selectAll = (select = true) => () => {
         if (!selection) return
-
+        const prevSelection = new Set(selection)
         selection.clear()
-        options.forEach(o => { if (!o.disabled) selection.add(o.key as S) })
 
-        const selectionArr = Array.from(selection)
-        setMultiValues(selectionArr)
-        wave.args[name] = selectionArr
+        options.forEach(({ disabled, key }) => {
+          const k = key as S
+          if ((disabled && prevSelection.has(k)) || (!disabled && select)) selection.add(k)
+        })
 
-        onChange()
-      },
-      deselectAll = () => {
-        if (!selection) return
-
-        selection.clear()
-        setMultiValues([])
-        wave.args[name] = []
+        const selectedOpts = Array.from(selection)
+        setMultiValues(selectedOpts)
+        wave.args[name] = selectedOpts
 
         onChange()
       }
@@ -160,7 +158,7 @@ const
           isMultivalued &&
           <div>
             <Fluent.Text variant='small'>
-              <Fluent.Link onClick={selectAll}>Select All</Fluent.Link> | <Fluent.Link onClick={deselectAll}>Deselect All</Fluent.Link>
+              <Fluent.Link disabled={disabled} onClick={selectAll()}>Select All</Fluent.Link> | <Fluent.Link disabled={disabled} onClick={selectAll(false)}>Deselect All</Fluent.Link>
             </Fluent.Text>
           </div>
         }
@@ -172,8 +170,8 @@ const
   getPageSpecification = () => ({ itemCount: PAGE_SIZE, height: ROW_HEIGHT * PAGE_SIZE } as Fluent.IPageSpecification),
   useItems = (choices: Choice[], v?: S | S[]) => {
     const
-      [items, setItems] = React.useState<DropdownItem[]>(choices.map(({ name, label }, idx) =>
-        ({ name, text: label || name, idx, checked: Array.isArray(v) ? v.includes(name) : v === name, show: true }))),
+      [items, setItems] = React.useState<DropdownItem[]>(choices.map(({ name, label, disabled = false }, idx) =>
+        ({ name, text: label || name, idx, checked: Array.isArray(v) ? v.includes(name) : v === name, show: true, disabled }))),
       onSearchChange = (_e?: React.ChangeEvent<HTMLInputElement>, newVal = '') => setItems(items => items.map(i => ({ ...i, show: fuzzysearch(i.text, newVal) })))
 
     return [items, setItems, onSearchChange] as const
@@ -188,6 +186,7 @@ const
       }}
       onChange={onChecked(item.name)}
       className={item.checked ? css.dialogCheckedRow : ''}
+      disabled={item.disabled}
       checked={item.checked} />
     : null,
 
@@ -201,7 +200,8 @@ const
         setItems(items => items.map(item => (({ ...item, checked: item.name === itemName ? checked : false, show: true }))))
         wave.args[name] = itemName
         model.value = itemName
-        if (trigger) wave.push()
+        // HACK: Push clears args so run it after useEffect sets them due to model.value change.
+        if (trigger) setTimeout(() => wave.push(), 0)
         toggleDialog()
       }
 
@@ -242,8 +242,9 @@ const
       </>
     )
   },
-  DialogDropdownMulti = ({ name, choices = [], values = [], disabled, required, trigger, placeholder, label }: Dropdown) => {
+  DialogDropdownMulti = ({ model }: { model: Dropdown }) => {
     const
+      { name, choices = [], values = [], disabled, required, trigger, placeholder, label } = model,
       [isDialogHidden, setIsDialogHidden] = React.useState(true),
       [items, setItems, onSearchChange] = useItems(choices, values),
       itemsOnDialogOpen = React.useRef(items),
@@ -261,14 +262,15 @@ const
       },
       submit = (items: DropdownItem[]) => {
         wave.args[name] = items.filter(i => i.checked).map(i => i.name)
-        if (trigger) wave.push()
+        // HACK: Push clears args so run it after useEffect sets them due to model.values change.
+        if (trigger) setTimeout(() => wave.push(), 0)
         closeDialog()
       },
       onChecked = (name: S) => (_ev?: React.FormEvent<HTMLElement | HTMLInputElement>, checked = false) => {
         setItems(items => items.map(i => ({ ...i, checked: name === i.name ? checked : i.checked })))
       },
       selectAll = (checked = true) => () => {
-        setItems(items => items.map(i => ({ ...i, checked: i.show ? checked : i.checked })))
+        setItems(items => items.map(i => ({ ...i, checked: i.show && !i.disabled ? checked : i.checked })))
       }
 
     React.useEffect(() => {
@@ -316,13 +318,13 @@ const
       </>
     )
   },
-  DialogDropdown = (props: Dropdown) => props.values ? <DialogDropdownMulti {...props} /> : <DialogDropdownSingle model={{ ...props }} />
+  DialogDropdown = ({ model }: { model: Dropdown }) => model.values ? <DialogDropdownMulti model={model} /> : <DialogDropdownSingle model={model} />
 
 export const XDropdown = ({ model: m }: { model: Dropdown }) =>
   m.popup === 'always'
-    ? <DialogDropdown {...m} />
+    ? <DialogDropdown model={m} />
     : m.popup === 'never'
-      ? <BaseDropdown model={{ ...m }} />
+      ? <BaseDropdown model={m} />
       : (m.choices?.length || 0) > 100
-        ? <DialogDropdown {...m} />
-        : <BaseDropdown model={{ ...m }} />
+        ? <DialogDropdown model={m} />
+        : <BaseDropdown model={m} />

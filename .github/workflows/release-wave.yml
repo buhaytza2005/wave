@@ -23,7 +23,11 @@ jobs:
 
       - uses: actions/setup-go@v1
         with:
-          go-version: '1.16'
+          go-version: '1.19.4'
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version-file: '.nvmrc'
 
       - name: Setup
         run: make setup
@@ -35,12 +39,13 @@ jobs:
 
       - name: Build Release
         run: make release
+        env:
+          NODE_OPTIONS: '--max-old-space-size=8192'
 
       - name: Unit Test
         run: |
           make test-ui-ci
           make test-py-ci
-          make test-vsc-ci
 
       - name: Create GitHub Release
         id: create_release
@@ -58,12 +63,12 @@ jobs:
             build/wave-${{ env.VERSION }}-darwin-arm64.tar.gz
             build/wave-${{ env.VERSION }}-linux-amd64.tar.gz
             build/wave-${{ env.VERSION }}-windows-amd64.tar.gz
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_10_9_x86_64.whl
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_11_0_arm64.whl
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_12_0_arm64.whl
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-manylinux1_x86_64.whl
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-win_amd64.whl
-            py/dist/h2o_wave-${{ env.VERSION }}-py3-none-any.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_10_9_x86_64.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_11_0_arm64.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-macosx_12_0_arm64.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-manylinux1_x86_64.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-win_amd64.whl
+            py/h2o_wave/dist/h2o_wave-${{ env.VERSION }}-py3-none-any.whl
             r/build/h2owave_${{ env.VERSION }}_R.tar.gz
           tag_name: ${{ env.TAG }}
         env:
@@ -72,14 +77,17 @@ jobs:
       - name: Publish to Conda
         uses: amauryval/publish_conda_package_action@1.1.0
         with:
-          CondaDir: 'py/conda'
+          CondaDir: 'py/h2o_wave/conda'
           CondaUsername: ${{ secrets.CONDA_USERNAME }}
           CondaPassword: ${{ secrets.CONDA_PASSWORD }}
+        env:
+          # VERSION clashes with conda build. Use PKG_VERSION instead.
+          PKG_VERSION: ${{ env.VERSION }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
-          packages_dir: py/dist
+          packages_dir: py/h2o_wave/dist
           password: ${{ secrets.PYPI_API_TOKEN }}
 
       - name: Publish Docs
@@ -92,39 +100,12 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_WEST_REGION }}
 
-      # Needed for PyCharm plugin publish.
-      - name: Setup Java
-        uses: actions/setup-java@v2
-        with:
-          distribution: zulu
-          java-version: 11
-          cache: gradle
-      
-      - name: Publish IntelliJ Plugin
-        env:
-          JETBRAINS_PUBLISH_TOKEN: ${{ secrets.JETBRAINS_PUBLISH_TOKEN }}
-        run: make publish-pycharm
-
-      - name: Publish VSCode extension
-        run: make publish-vsc-extension
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
       - name: Publish to S3
         run: make publish-release-s3
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_EAST_REGION }}
-
-      # Call some time after cloudfront cache bust - crawler needs to hit fresh cache.
-      - name: Reindex Algolia search
-        run: |
-          curl -X POST -H "Content-Type: application/json" --user $ALGOLIA_CRAWLER_USER_ID:$ALGOLIA_CRAWLER_API_KEY  https://crawler.algolia.com/api/1/crawlers/$ALGOLIA_CRAWLER_ID/reindex
-        env:
-          ALGOLIA_CRAWLER_API_KEY: ${{ secrets.ALGOLIA_CRAWLER_API_KEY }}
-          ALGOLIA_CRAWLER_ID: ${{ secrets.ALGOLIA_CRAWLER_ID }}
-          ALGOLIA_CRAWLER_USER_ID: ${{ secrets.ALGOLIA_CRAWLER_USER_ID }}
 
       - name: Publish apps for Cloud
         run: make build-apps publish-apps-s3-hac
@@ -142,11 +123,32 @@ jobs:
           AWS_SECRET_ACCESS_KEY : ${{ secrets.MC_AWS_SECRET_ACCESS_KEY  }}
           AWS_REGION: ${{ secrets.MC_AWS_REGION }}
 
+      # Call some time after cloudfront cache bust - crawler needs to hit fresh cache.
+      - name: Reindex Algolia search
+        run: |
+          curl -X POST -H "Content-Type: application/json" --user $ALGOLIA_CRAWLER_USER_ID:$ALGOLIA_CRAWLER_API_KEY  https://crawler.algolia.com/api/1/crawlers/$ALGOLIA_CRAWLER_ID/reindex
+        env:
+          ALGOLIA_CRAWLER_API_KEY: ${{ secrets.ALGOLIA_CRAWLER_API_KEY }}
+          ALGOLIA_CRAWLER_ID: ${{ secrets.ALGOLIA_CRAWLER_ID }}
+          ALGOLIA_CRAWLER_USER_ID: ${{ secrets.ALGOLIA_CRAWLER_USER_ID }}
+
       - name: Build university
         run:  make publish-university
       
-      - name: Publish Wave University to PyPI
+      - name: Publish to PyPI - wave_university
         uses: pypa/gh-action-pypi-publish@master
         with:
           packages_dir: university/dist
           password: ${{ secrets.PYPI_UNIVERSITY_TOKEN }}
+
+      - name: Publish to PyPI - lightwave
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          packages_dir: py/h2o_lightwave/dist
+          password: ${{ secrets.PYPI_LIGTHWAVE_TOKEN }}
+
+      - name: Publish to PyPI - lightwave_web
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          packages_dir: py/h2o_lightwave_web/dist
+          password: ${{ secrets.PYPI_LIGTHWAVE_WEB_TOKEN }}

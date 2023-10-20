@@ -61,3 +61,59 @@ q.page['align'] = ui.form_card(box='1 1 3 5', items=[
     ui.inline(items, align='end'),
 ])
 ```
+
+## Setting height
+
+Height of the `ui.inline` can be controlled via the `height` attribute, supporting all [valid CSS units](https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units). However, `%` may not always work as you might expect so it's advised to use static units like `px`, `rem` etc.
+
+It's also possible to specify `1` to fill the remaining card space. Useful for displaying form items in the middle of the card or just making more breathing room.
+
+```py
+q.page['example'] = ui.form_card(box='1 1 -1 -1', items=[
+    ui.inline(
+        items=[ui.text('I am in the perfect center!')], 
+        justify='center',
+        align='center',
+        height='1'
+    )
+])
+```
+
+## Direction
+
+The inline component allows for laying out the components in 2 directions, `row` (default) and `column`. This might be useful if multiple sections (consisting of more than 1 component) need to be placed next to each other. In such case, `ui.inline` serves as a container grouping multiple components into a single section.
+
+```py
+q.page['example'] = ui.form_card(box='1 1 -1 3', items=[
+    ui.text_xl('Header'),
+    ui.inline(
+        height='1',
+        justify='around',
+        align='center',
+        items=[
+            ui.inline(
+                direction='column',
+                items=[
+                    ui.text_l(content='Sub title 1'),
+                    ui.text(content='Lorem ipsum dolor sit amet'),
+                ]
+            ),
+            ui.inline(
+                direction='column',
+                items=[
+                    ui.text_l(content='Sub title 2'),
+                    ui.text(content='Lorem ipsum dolor sit amet'),
+                ]
+            ),
+            ui.inline(
+                direction='column',
+                items=[
+                    ui.text_l(content='Sub title 3'),
+                    ui.text(content='Lorem ipsum dolor sit amet'),
+                ]
+            ),
+        ]
+    ),
+    ui.text('Footer'),
+])
+```

@@ -20,9 +20,9 @@ import { Button, Buttons, MiniButton, MiniButtons, XButtons, XMiniButton, XMiniB
 import { Checkbox, XCheckbox } from './checkbox'
 import { Checklist, XChecklist } from './checklist'
 import { ChoiceGroup, XChoiceGroup } from './choice_group'
-import { CopyableText, XCopyableText } from "./copyable_text"
 import { ColorPicker, XColorPicker } from './color_picker'
 import { Combobox, XCombobox } from './combobox'
+import { CopyableText, XCopyableText } from "./copyable_text"
 import { DatePicker, XDatePicker } from './date_picker'
 import { Dropdown, XDropdown } from './dropdown'
 import { Expander, XExpander } from './expander'
@@ -30,10 +30,12 @@ import { Facepile, XFacepile } from "./facepile"
 import { FileUpload, XFileUpload } from './file_upload'
 import { Frame, XFrame } from './frame'
 import { Image, XImage } from './image'
+import { ImageAnnotator, XImageAnnotator } from './image_annotator'
 import { Label, XLabel } from './label'
 import { cards } from './layout'
-import { Link, XLink, Links, XLinks } from './link'
+import { Link, Links, XLink, XLinks } from './link'
 import { Markup, XMarkup } from './markup'
+import { Menu, XMenu } from './menu'
 import { MessageBar, XMessageBar } from './message_bar'
 import { Persona, XPersona } from "./persona"
 import { Picker, XPicker } from './picker'
@@ -47,19 +49,17 @@ import { Stats, XStats } from './stats'
 import { Stepper, XStepper } from './stepper'
 import { Table, XTable } from './table'
 import { Tabs, XTabs } from './tabs'
+import { Tags, XTags } from './tags'
 import { Template, XTemplate } from './template'
 import { Text, TextL, TextM, TextS, TextXl, TextXs, XText } from './text'
-import { Textbox, XTextbox } from './textbox'
 import { TextAnnotator, XTextAnnotator } from './text_annotator'
-import { ImageAnnotator, XImageAnnotator } from './image_annotator'
-import { clas, cssVar, justifications, alignments, padding } from './theme'
+import { Textbox, XTextbox } from './textbox'
+import { alignments, clas, cssVar, justifications, padding } from './theme'
+import { TimePicker, XTimePicker } from './time_picker'
 import { Toggle, XToggle } from './toggle'
 import { XToolTip } from './tooltip'
 import { bond } from './ui'
 import { VegaVisualization, XVegaVisualization } from './vega'
-import { Menu, XMenu } from './menu'
-import { XTags, Tags } from './tags'
-import { TimePicker, XTimePicker } from './time_picker'
 
 /** Create a component. */
 export interface Component {
@@ -175,6 +175,10 @@ interface Inline {
   align?: 'start' | 'end' | 'center' | 'baseline'
   /** Whether to display the components inset from the parent form, with a contrasting background. */
   inset?: B
+  /** Height of the inline container. Accepts any valid CSS unit e.g. '100vh', '300px'. Use '1' to fill the remaining card space. */
+  height?: S
+  /** Container direction. Defaults to 'row'. */
+  direction?: 'row' | 'column'
 }
 
 /** Create a form. */
@@ -189,6 +193,8 @@ const
   defaults: Partial<State> = { items: [] },
   css = stylesheet({
     card: {
+      display: 'flex',
+      flexDirection: 'column',
       padding: 15,
     },
     vertical: {
@@ -214,37 +220,65 @@ const
       background: cssVar('$page'),
       padding: padding(10, 15)
     },
+    fullHeight: {
+      display: 'flex',
+      flexGrow: 1
+    }
   })
 
 type Justification = 'start' | 'end' | 'center' | 'between' | 'around'
 type Alignment = 'start' | 'end' | 'center' | 'baseline'
+type XComponentsProps = {
+  items: Component[]
+  justify?: Justification
+  align?: Alignment
+  inset?: B
+  height?: S
+  direction?: 'row' | 'column'
+}
+
+const
+  needsDefaultWidth = new Set(['date_picker', 'dropdown', 'slider', 'range_slider', 'table', 'visualization', 'vega_visualization']),
+  getComponentWidth = (componentKey: S, isInline: B) => isInline && needsDefaultWidth.has(componentKey) ? '400px' : 'auto'
 
 export const
-  XComponents = ({ items, justify, align, inset }: { items: Component[], justify?: Justification, align?: Alignment, inset?: B }) => {
+  XComponents = ({ items, justify, align, inset, height, direction = 'column' }: XComponentsProps) => {
     const
       components = items.map((m: any, i) => {
         const
           // All form items are wrapped by their component name (first and only prop of "m").
           [componentKey] = Object.keys(m),
-          { name, visible = true, width = 'auto' } = m[componentKey],
+          isInline = !!(justify || align),
+          { name, visible = true, width = getComponentWidth(componentKey, isInline), height } = m[componentKey],
           visibleStyles: React.CSSProperties = visible ? {} : { display: 'none' },
           // TODO: Ugly, maybe use ui.inline's 'align' prop instead?
           alignSelf = componentKey === 'links' ? 'flex-start' : undefined
 
+        if (m[componentKey].width !== width) m[componentKey].width = width
+
         return (
-          // Recreate only if name or position within form items changed, update otherwise.
-          <div key={name || `${componentKey}-${i}`} data-visible={visible} style={{ ...visibleStyles, width, alignSelf }}>
+          <div
+            // Recreate only if name or position within form items changed, update otherwise.
+            key={name || `${componentKey}-${i}`}
+            data-visible={visible}
+            className={height === '1' ? css.fullHeight : ''}
+            style={{ ...visibleStyles, width, alignSelf }}
+          >
             <XComponent model={m} />
           </div>
         )
       })
-    return <div
-      className={clas(justify ? css.horizontal : css.vertical, inset ? css.inset : '')}
-      style={{
-        justifyContent: justifications[justify || ''],
-        alignItems: alignments[align || ''],
-      }}
-    >{components}</div>
+
+    return (
+      <div
+        className={clas(direction === 'row' ? css.horizontal : css.vertical, inset ? css.inset : '', height === '1' ? css.fullHeight : '')}
+        style={{
+          justifyContent: justifications[justify || ''],
+          alignItems: alignments[align || ''],
+          height: height === '1' ? undefined : height,
+        }}
+      >{components}</div>
+    )
   },
   XInline = ({ model: m }: { model: Inline }) => (
     <XComponents
@@ -252,6 +286,8 @@ export const
       justify={m.justify || 'start'}
       align={m.align || 'center'}
       inset={m.inset}
+      height={m.height}
+      direction={m.direction || 'row'}
     />
   )
 

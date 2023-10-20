@@ -24,6 +24,7 @@ import { TagTableCellType, XTagTableCellType } from "./tag_table_cell_type"
 import { border, cssVar, important, margin, rem } from './theme'
 import useUpdateOnlyEffect from './parts/useUpdateOnlyEffectHook'
 import { wave } from './ui'
+import { Z_INDEX } from './parts/styleConstants'
 
 /** Configure table pagination. Use as `pagination` parameter to `ui.table()` */
 interface TablePagination {
@@ -71,7 +72,7 @@ interface TableColumn {
   cell_type?: TableCellType
   /** Defines what to do with a cell's contents in case it does not fit inside the cell. */
   cell_overflow?: 'tooltip' | 'wrap'
-  /** List of values to allow filtering by, needed when pagination is set. Only applicable to filterable columns. */
+  /** Explicit list of values to allow filtering by, needed when pagination is set or custom order is needed. Only applicable to filterable columns. */
   filters?: S[]
   /** Defines how to align values in a column. */
   align?: 'left' | 'center' | 'right'
@@ -127,15 +128,15 @@ export interface Table {
   columns: TableColumn[]
   /** The rows in this table. Mutually exclusive with `groups` attr. */
   rows?: TableRow[]
-  /** True to allow multiple rows to be selected. */
+  /** True to allow multiple rows to be selected. Mutually exclusive with `single` attr. */
   multiple?: B
-  /** True to allow group by feature. Not applicable when `pagination` is set. */
+  /** True to allow group by feature. */
   groupable?: B
   /** Indicates whether the table rows can be downloaded as a CSV file. Defaults to False. */
   downloadable?: B
   /** Indicates whether a Reset button should be displayed to reset search / filter / group-by values to their defaults. Defaults to False. */
   resettable?: B
-  /** The height of the table, e.g. '400px', '50%', etc. */
+  /** The height of the table in px (e.g. '200px') or '1' to fill the remaining card space. */
   height?: S
   /** The width of the table, e.g. '100px'. Defaults to '100%'. */
   width?: S
@@ -151,8 +152,12 @@ export interface Table {
   groups?: TableGroup[]
   /** Display a pagination control at the bottom of the table. Set this value using `ui.table_pagination()`. */
   pagination?: TablePagination
-  /** The events to capture on this table. One of 'search' | 'sort' | 'filter' | 'download' | 'page_change' | 'reset'. */
+  /** The events to capture on this table when pagination is set. One of 'search' | 'sort' | 'filter' | 'download' | 'page_change' | 'reset' | 'select'. */
   events?: S[]
+  /** True to allow only one row to be selected at time. Mutually exclusive with `multiple` attr. */
+  single?: B
+  /** The name of the selected row. If this parameter is set, single selection will be allowed (`single` is assumed to be `True`). */
+  value?: S
 }
 
 type WaveColumn = Fluent.IColumn & {
@@ -167,12 +172,13 @@ type WaveColumn = Fluent.IColumn & {
 type DataTable = {
   model: Table
   onFilterChange: (filterKey: S, filterVal: S, checked?: B) => void
-  sort: (col: WaveColumn, sortAsc: B) => void,
+  onSortChange: (col: WaveColumn, sortAsc: B) => void,
   filteredItems: any[]
   selectedFilters: Dict<S[]> | null
   items: any[]
   selection: Fluent.Selection
-  isMultiple: B
+  isMultiple: B,
+  isSingle: B,
   groups?: Fluent.IGroup[]
   expandedRefs: React.MutableRefObject<{ [key: S]: B } | null>
   setFiltersInBulk: (colKey: S, filters: S[]) => void
@@ -182,7 +188,7 @@ type ContextualMenuProps = {
   onFilterChange: (filterKey: S, filterVal: S, checked?: B) => void
   col: WaveColumn
   listProps: Fluent.IContextualMenuListProps
-  selectedFiltersRef: React.MutableRefObject<Dict<S[]> | null>
+  selectedFilters: Dict<S[]> | null
   setFiltersInBulk: (colKey: S, filters: S[]) => void
 }
 
@@ -278,9 +284,9 @@ const
       >{children}</Fluent.TooltipHost>
     ) : <>{children}</>
   },
-  ContextualMenu = ({ onFilterChange, col, listProps, selectedFiltersRef, setFiltersInBulk }: ContextualMenuProps) => {
+  ContextualMenu = ({ onFilterChange, col, listProps, selectedFilters, setFiltersInBulk }: ContextualMenuProps) => {
     const
-      isFilterChecked = (data: S, key: S) => !!selectedFiltersRef.current && selectedFiltersRef.current[data]?.includes(key),
+      isFilterChecked = (data: S, key: S) => !!selectedFilters && selectedFilters[data]?.includes(key),
       [menuFilters, setMenuFilters] = React.useState(col.cellType?.tag
         ? Array.from(listProps.items.reduce((_filters, { key, text, data }) => {
           key.split(',').forEach(key => _filters.set(key, { key, text, data, checked: isFilterChecked(data, key) }))
@@ -322,18 +328,39 @@ const
       </div>
     )
   },
-  DataTable = React.forwardRef(({ model: m, onFilterChange, items, filteredItems, selection, selectedFilters, isMultiple, groups, expandedRefs, sort, setFiltersInBulk }: DataTable, ref) => {
+  DataTable = React.forwardRef(({ model: m, onFilterChange, items, filteredItems, selection, selectedFilters, isMultiple, isSingle, groups, expandedRefs, onSortChange, setFiltersInBulk }: DataTable, ref) => {
     const
       [colContextMenuList, setColContextMenuList] = React.useState<Fluent.IContextualMenuProps | null>(null),
-      selectedFiltersRef = React.useRef(selectedFilters),
-      onColumnClick = (e: React.MouseEvent<HTMLElement>, column: WaveColumn) => {
+      onRenderMenuList = React.useCallback((col: WaveColumn) => (listProps?: Fluent.IContextualMenuListProps) => {
+        return listProps ?
+          <ContextualMenu
+            onFilterChange={onFilterChange}
+            col={col}
+            listProps={listProps}
+            selectedFilters={selectedFilters}
+            setFiltersInBulk={setFiltersInBulk}
+          /> : null
+      }, [onFilterChange, selectedFilters, setFiltersInBulk]),
+      onColumnContextMenu = React.useCallback((col: WaveColumn, e: React.MouseEvent<HTMLElement>) => {
+        const menuFilters = col.filters || items.map(i => i[col.fieldName || col.key])
+        setColContextMenuList({
+          items: Array.from(new Set(menuFilters)).filter(item => item !== '').map(option => ({ key: option, text: option, data: col.fieldName || col.key })),
+          target: e.target as HTMLElement,
+          directionalHint: Fluent.DirectionalHint.bottomLeftEdge,
+          gapSpace: 10,
+          isBeakVisible: true,
+          onRenderMenuList: onRenderMenuList(col),
+          onDismiss: () => setColContextMenuList(null),
+        })
+      }, [items, onRenderMenuList]),
+      onColumnClick = React.useCallback((e: React.MouseEvent<HTMLElement>, column: WaveColumn) => {
         const isMenuClicked = (e.target as HTMLElement).closest('[data-icon-name="ChevronDown"]')
 
         if (isMenuClicked) onColumnContextMenu(column, e)
         else if (column.isSortable) {
           const sortAsc = column.iconName === 'SortDown' || !column.iconName
-          sort(column, sortAsc)
-          setColumns(columns.map(col => {
+          onSortChange(column, sortAsc)
+          setColumns(cols => cols.map(col => {
             if (column.key === col.key) {
               col.iconName = sortAsc ? 'SortUp' : 'SortDown'
             } else {
@@ -342,8 +369,8 @@ const
             return col
           }))
         }
-      },
-      [columns, setColumns] = React.useState(m.columns.map((c): WaveColumn => {
+      }, [onColumnContextMenu, onSortChange]),
+      tableToWaveColumn = React.useCallback((c: TableColumn): WaveColumn => {
         const
           minWidth = c.min_width
             ? c.min_width.endsWith('px')
@@ -373,32 +400,11 @@ const
           styles: { root: { height: 48 }, cellName: { color: cssVar('$neutralPrimary') } },
           isResizable: true,
           isMultiline: c.cell_overflow === 'wrap',
-          filters: c.filterable && m.pagination ? c.filters : undefined,
+          filters: c.filterable ? c.filters : undefined,
         }
-      })),
+      }, [onColumnClick]),
+      [columns, setColumns] = React.useState(m.columns.map(tableToWaveColumn)),
       primaryColumnKey = m.columns.find(c => c.link)?.name || (m.columns[0].link === false ? undefined : m.columns[0].name),
-      onRenderMenuList = React.useCallback((col: WaveColumn) => (listProps?: Fluent.IContextualMenuListProps) => {
-        return listProps ?
-          <ContextualMenu
-            onFilterChange={onFilterChange}
-            col={col}
-            listProps={listProps}
-            selectedFiltersRef={selectedFiltersRef}
-            setFiltersInBulk={setFiltersInBulk}
-          /> : null
-      }, [onFilterChange, setFiltersInBulk]),
-      onColumnContextMenu = React.useCallback((col: WaveColumn, e: React.MouseEvent<HTMLElement>) => {
-        const menuFilters = col.filters || items.map(i => i[col.fieldName || col.key])
-        setColContextMenuList({
-          items: Array.from(new Set(menuFilters)).map(option => ({ key: option, text: option, data: col.fieldName || col.key })),
-          target: e.target as HTMLElement,
-          directionalHint: Fluent.DirectionalHint.bottomLeftEdge,
-          gapSpace: 10,
-          isBeakVisible: true,
-          onRenderMenuList: onRenderMenuList(col),
-          onDismiss: () => setColContextMenuList(null),
-        })
-      }, [items, onRenderMenuList]),
       onRenderDetailsHeader = React.useCallback((props?: Fluent.IDetailsHeaderProps) => {
         if (!props) return <span />
 
@@ -440,7 +446,7 @@ const
                   position: 'sticky',
                   top: 48,
                   backgroundColor: cssVar('$card'),
-                  zIndex: 1
+                  zIndex: Z_INDEX.TABLE_GROUPS_HEADER
                 },
                 stylesProps.selected
                   ? {
@@ -495,7 +501,7 @@ const
         let v = item[col.fieldName as S]
         if (col.cellType?.progress) return <XProgressTableCellType model={col.cellType.progress} progress={item[col.key]} />
         if (col.cellType?.icon) return <XIconTableCellType model={col.cellType.icon} icon={item[col.key]} />
-        if (col.cellType?.tag) return <XTagTableCellType model={col.cellType.tag} serializedTags={item[col.key]} />
+        if (col.cellType?.tag) return <XTagTableCellType model={col.cellType.tag} serializedTags={item[col.key]} isMultiline={col.isMultiline} />
         if (col.cellType?.menu) return <XMenuTableCellType model={{ ...col.cellType.menu, rowId: String(item.key) }} />
         if (col.cellType?.markdown) return (
           <TooltipWrapper cellOverflow={col.cellOverflow}>
@@ -534,12 +540,12 @@ const
         return groupHeaderHeight + (group.isCollapsed ? 0 : rowHeight * group.count)
       }
 
-    // HACK: React stale closures - https://reactjs.org/docs/hooks-faq.html#why-am-i-seeing-stale-props-or-state-inside-my-function
-    // TODO: Find a reasonable way of doing this.
-    React.useEffect(() => { { selectedFiltersRef.current = selectedFilters } }, [selectedFilters])
+    React.useEffect(() => {
+      setColumns(cols => m.columns.map(tableToWaveColumn).map((col, idx) => ({ ...cols[idx], ...col })))
+    }, [m.columns, tableToWaveColumn])
     React.useImperativeHandle(ref, () => ({
       resetSortIcons: () => {
-        setColumns(columns.map(col => {
+        setColumns(columns => columns.map(col => {
           if (col.iconName) col.iconName = undefined
           return col
         }))
@@ -563,9 +569,9 @@ const
           }}
           getGroupHeight={getGroupHeight}
           selection={selection}
-          selectionMode={isMultiple ? Fluent.SelectionMode.multiple : Fluent.SelectionMode.none}
+          selectionMode={isSingle ? Fluent.SelectionMode.single : isMultiple ? Fluent.SelectionMode.multiple : Fluent.SelectionMode.none}
           selectionPreservedOnEmptyClick
-          onItemInvoked={isMultiple ? undefined : onItemInvoked}
+          onItemInvoked={isMultiple || isSingle ? undefined : onItemInvoked}
           onRenderRow={onRenderRow}
           onRenderItemColumn={onRenderItemColumn}
           onRenderDetailsHeader={onRenderDetailsHeader}
@@ -671,7 +677,7 @@ const
 export const
   XTable = ({ model: m }: { model: Table }) => {
     const
-      groupable = !m.groups && m.groupable,
+      groupable = m.groupable && (!m.groups || m.pagination),
       getItem = React.useCallback((r: TableRow) => {
         const item: Fluent.IObjectWithKey & Dict<any> = { key: r.name }
         for (let i = 0, n = r.cells.length; i < n; i++) {
@@ -689,11 +695,15 @@ export const
           : (m.rows || []).map(getItem)
         , [m.rows, m.groups, getItem]),
       isMultiple = Boolean(m.values?.length || m.multiple),
+      isSingle = Boolean(m.value || m.single),
+      isFullHeight = m.height === '1',
       [filteredItems, setFilteredItems] = React.useState(items),
       [currentPage, setCurrentPage] = React.useState(1),
       searchableKeys = React.useMemo(() => m.columns.filter(({ searchable }) => searchable).map(({ name }) => name), [m.columns]),
       [searchStr, setSearchStr] = React.useState(''),
       [selectedFilters, setSelectedFilters] = React.useState<Dict<S[]> | null>(null),
+      // TODO: Add support for multi-col sort.
+      [currentSort, setCurrentSort] = React.useState<{ column: WaveColumn, sortAsc: B } | null>(null),
       [groups, setGroups] = React.useState<Fluent.IGroup[] | undefined>(),
       expandedRefs = React.useRef<{ [key: S]: B } | null>({}),
       [groupByKey, setGroupByKey] = React.useState('*'),
@@ -704,12 +714,11 @@ export const
       ),
       filter = React.useCallback((selectedFilters: Dict<S[]> | null) => {
         // If we have filters, check if any of the data-item's props (filter's keys) equals to any of its filter values.
-        setFilteredItems(
-          selectedFilters
-            ? items.filter(item => Object.keys(selectedFilters)
-              .every(filterKey => !selectedFilters[filterKey].length || selectedFilters[filterKey].some(filterVal => String(item[filterKey]).includes(filterVal)))
-            )
-            : items
+        setFilteredItems(selectedFilters
+          ? items.filter(item => Object.keys(selectedFilters)
+            .every(filterKey => !selectedFilters[filterKey].length || selectedFilters[filterKey].some(filterVal => String(item[filterKey]).includes(filterVal)))
+          )
+          : items
         )
       }, [items]),
       getIsCollapsed = (key: S, expandedRefs: { [key: S]: B } | null) => {
@@ -781,6 +790,25 @@ export const
         wave.emit(m.name, 'search', { value: searchStr, cols: searchableKeys })
         setCurrentPage(1)
       },
+      onSortChange = React.useCallback((column: WaveColumn, sortAsc: B) => {
+        if (m.pagination && m.events?.includes('sort')) {
+          wave.emit(m.name, 'sort', { [column.fieldName || column.name]: sortAsc })
+          setCurrentPage(1)
+          return
+        }
+        setGroups(groups => {
+          if (groups) {
+            setFilteredItems(filteredItems => [...groups]
+              // sorts groups by startIndex to match its order in filteredItems
+              .sort((group1, group2) => group1.startIndex - group2.startIndex)
+              .reduce((acc, group) => [...acc, ...filteredItems.slice(group.startIndex, acc.length + group.count).sort(sortingF(column, sortAsc))],
+                [] as any[]) || [])
+          }
+          else setFilteredItems(filteredItems => [...filteredItems].sort(sortingF(column, sortAsc)))
+          return groups
+        })
+        setCurrentSort({ column, sortAsc })
+      }, [m.events, m.name, m.pagination]),
       debouncedFireSearchEvent = React.useRef(wave.debounce(500, fireSearchEvent)),
       onSearchChange = React.useCallback((_e?: React.FormEvent<HTMLInputElement | HTMLTextAreaElement>, searchStr = '') => {
         setSearchStr(searchStr)
@@ -790,7 +818,8 @@ export const
           return
         }
         if (!searchStr && !selectedFilters) {
-          setFilteredItems(items)
+          if (currentSort) setFilteredItems([...items].sort(sortingF(currentSort.column, currentSort.sortAsc)))
+          else setFilteredItems(items)
           setGroups(groups => {
             if (groups) initGroups()
             return groups
@@ -800,16 +829,19 @@ export const
 
         filter(selectedFilters)
         search()
+        if (currentSort) setFilteredItems(filteredItems => [...filteredItems].sort(sortingF(currentSort.column, currentSort.sortAsc)))
+
         setGroups(groups => {
           if (groups) initGroups()
           return groups
         })
-      }, [m.pagination, m.events, selectedFilters, filter, search, items, initGroups]),
+      }, [m.pagination, m.events, selectedFilters, filter, search, currentSort, items, initGroups]),
       onGroupByChange = (_e: React.FormEvent<HTMLDivElement>, option?: Fluent.IDropdownOption) => {
         if (!option) return
         if (m.pagination) {
-          wave.emit(m.name, 'group_by', true)
+          wave.emit(m.name, 'group_by', option.key)
           setCurrentPage(1)
+          setGroupByKey(option.key as S)
           return
         }
         reset()
@@ -848,6 +880,7 @@ export const
           } else {
             filter(filters)
             search()
+            if (currentSort) setFilteredItems(filteredItems => [...filteredItems].sort(sortingF(currentSort.column, currentSort.sortAsc)))
             setGroups(groups => {
               if (groups) initGroups()
               return groups
@@ -855,12 +888,13 @@ export const
           }
           return filters
         })
-      }, [filter, initGroups, m.events, m.name, m.pagination, search]),
+      }, [currentSort, filter, initGroups, m.events, m.name, m.pagination, search]),
       // TODO: Make filter options in dropdowns dynamic.
       reset = React.useCallback(() => {
         setSelectedFilters(null)
         setSearchStr('')
         setGroups(undefined)
+        setCurrentSort(null)
         if (m.groups) initGroups()
         expandedRefs.current = {}
         setGroupByKey('*')
@@ -875,7 +909,13 @@ export const
         filter(null)
         search()
       }, [filter, initGroups, m.events, m.groups, m.name, m.pagination, search]),
-      selection = React.useMemo(() => new Fluent.Selection({ onSelectionChanged: () => { wave.args[m.name] = selection.getSelection().map(item => item.key as S) } }), [m.name]),
+      selection = React.useMemo(() => new Fluent.Selection({
+        onSelectionChanged: () => {
+          const selectedItemKeys = selection.getSelection().map(item => item.key as S)
+          wave.args[m.name] = selectedItemKeys
+          if (m.events?.includes('select')) wave.emit(m.name, 'select', selectedItemKeys)
+        }
+      }), [m.name, m.events]),
       computeHeight = () => {
         if (m.height) return m.height
         if (items.length > 10) return 500
@@ -889,24 +929,6 @@ export const
 
         return topToolbarHeight + headerHeight + (items.length * rowHeight) + footerHeight + bottomBorder
       },
-      sort = React.useCallback((column: WaveColumn, sortAsc: B) => {
-        if (m.pagination && m.events?.includes('sort')) {
-          wave.emit(m.name, 'sort', { [column.fieldName || column.name]: sortAsc })
-          setCurrentPage(1)
-          return
-        }
-        setGroups(groups => {
-          if (groups) {
-            setFilteredItems(filteredItems => [...groups]
-              // sorts groups by startIndex to match its order in filteredItems
-              .sort((group1, group2) => group1.startIndex - group2.startIndex)
-              .reduce((acc, group) => [...acc, ...filteredItems.slice(group.startIndex, acc.length + group.count).sort(sortingF(column, sortAsc))],
-                [] as any[]) || [])
-          }
-          else setFilteredItems(filteredItems => [...filteredItems].sort(sortingF(column, sortAsc)))
-          return groups
-        })
-      }, [m.events, m.name, m.pagination]),
       setFiltersInBulk = React.useCallback((colKey: S, filters: S[]) => {
         setSelectedFilters(selectedFilters => {
           const newFilters = {
@@ -920,6 +942,7 @@ export const
           else {
             filter(newFilters)
             search()
+            if (currentSort) setFilteredItems(filteredItems => [...filteredItems].sort(sortingF(currentSort.column, currentSort.sortAsc)))
             setGroups(groups => {
               if (groups) initGroups()
               return groups
@@ -927,11 +950,15 @@ export const
           }
           return newFilters
         })
-      }, [m.pagination, m.events, m.name, filter, search, initGroups])
+      }, [m.pagination, m.events, m.name, filter, search, currentSort, initGroups])
 
     React.useEffect(() => {
       wave.args[m.name] = []
-      if (isMultiple && m.values) {
+      if (isSingle && m.value) {
+        selection.setKeySelected(m.value, true, false)
+        wave.args[m.name] = [m.value]
+      }
+      else if (isMultiple && m.values) {
         m.values.forEach(v => selection.setKeySelected(v, true, false))
         wave.args[m.name] = m.values
       }
@@ -940,7 +967,7 @@ export const
 
     useUpdateOnlyEffect(() => {
       setFilteredItems(items)
-      reset()
+      if (!m.pagination) reset()
     }, [items])
 
     React.useEffect(() => {
@@ -962,16 +989,21 @@ export const
       groups,
       expandedRefs,
       selection,
-      sort,
+      onSortChange,
       isMultiple,
+      isSingle,
       setFiltersInBulk
-    }), [filteredItems, groups, expandedRefs, isMultiple, items, m, onFilterChange, selectedFilters, selection, sort, setFiltersInBulk])
+    }), [filteredItems, groups, expandedRefs, isMultiple, isSingle, items, m, onFilterChange, selectedFilters, selection, onSortChange, setFiltersInBulk])
 
     return (
-      <div data-test={m.name} style={{ position: 'relative', height: computeHeight() }}>
+      <div data-test={m.name} style={{
+        position: 'relative',
+        flexGrow: isFullHeight ? 1 : 0,
+        height: isFullHeight ? 'auto' : computeHeight()
+      }}>
         <Fluent.Stack horizontal>
           {
-            groupable && !m.pagination && (
+            groupable && (
               <Fluent.Dropdown
                 data-test='groupby'
                 label='Group by'
@@ -999,7 +1031,7 @@ export const
           scrollbarVisibility={Fluent.ScrollbarVisibility.auto}
           styles={{
             root: { top: groupable || searchableKeys.length ? (groupable ? 74 : 48) : 0, bottom: shouldShowFooter ? 46 : 0 },
-            stickyAbove: { right: important('12px'), border: border(2, 'transparent'), zIndex: 2 },
+            stickyAbove: { right: important('12px'), border: border(2, 'transparent'), zIndex: Z_INDEX.TABLE_HEADER },
             contentContainer: { border: border(2, cssVar('$neutralLight')), borderRadius: '4px 4px 0 0' }
           }}>
           {

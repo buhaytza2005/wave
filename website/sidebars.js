@@ -17,6 +17,7 @@ module.exports = {
       'tutorial-monitor',
       'tutorial-counter',
       'tutorial-todo',
+      'project-templates',
     ],
     'Guide': [
       'guide',
@@ -176,6 +177,13 @@ module.exports = {
           "widgets/overlays/side_panel",
           "widgets/overlays/notification_bar",
           "widgets/overlays/notification",
+        ]
+      },
+      {
+        "type": "category",
+        "label": "AI",
+        "items": [
+          "widgets/ai/chatbot",
         ]
       },
     ],

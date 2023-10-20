@@ -20,7 +20,7 @@ import ReactDOM from 'react-dom'
 import { stylesheet } from 'typestyle'
 import { Fmt, parseFormat } from './intl'
 import { cards, grid } from './layout'
-import { cssVarValue, cssVar, formItemWidth, themeB } from './theme'
+import { cssVarValue, cssVar, formItemWidth, themeB, themesB } from './theme'
 import { bond, wave } from './ui'
 
 let
@@ -588,6 +588,7 @@ const
     return mark
   },
   refactorData = (ds: any[], marks: MarkExt[]): any[] => {
+    ds.forEach((d, idx) => d.idx = idx)
     for (const m of marks) {
       if (m.x_scale === 'time') {
         for (const { x_field, x0_field } of marks) {
@@ -1005,7 +1006,7 @@ const
       userSelect: 'none',
       "-webkit-user-select": 'none',
       $nest: {
-        'svg': {
+        'canvas': {
           position: 'absolute',
           top: 0,
           left: 0,
@@ -1039,22 +1040,19 @@ export interface Visualization {
 const tooltipContainer = document.createElement('div')
 tooltipContainer.className = 'g2-tooltip'
 
-const PlotTooltip = ({ items }: { items: TooltipItem[] }) =>
+const PlotTooltip = ({ items, originalItems }: { items: TooltipItem[], originalItems: any[] }) =>
   <>
     {items.map(({ data, mappingData, color }: TooltipItem) =>
-      Object.keys(data).map((item, idx) =>
-        <li key={idx} className="g2-tooltip-list-item" data-index={idx} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+      Object.keys(originalItems[data.idx]).map((itemKey, idx) => {
+        const item = originalItems[data.idx][itemKey]
+        return <li key={idx} className="g2-tooltip-list-item" data-index={idx} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
           <span style={{ backgroundColor: mappingData?.color || color }} className="g2-tooltip-marker" />
           <span style={{ display: 'inline-flex', flex: 1, justifyContent: 'space-between' }}>
-            <span style={{ marginRight: 16 }}>{item}:</span>
-            <span>
-              {(Array.isArray(data[item]) ? data[item] : [data[item]]).map((val: any, idx: number) => {
-                const value = val instanceof Date ? val.toISOString().split('T')[0] : val
-                return idx > 0 ? ` - ${value}` : value
-              })}
-            </span>
+            <span style={{ marginRight: 16 }}>{itemKey}:</span>
+            <span>{(item instanceof Date ? item.toISOString().split('T')[0] : item)}</span>
           </span>
         </li>
+      }
       )
     )}
   </>
@@ -1068,14 +1066,7 @@ export const
       currentChart = React.useRef<Chart | null>(null),
       currentPlot = React.useRef<Plot | null>(null),
       themeWatchRef = React.useRef<Disposable | null>(null),
-      checkDimensionsPostInit = (w: F, h: F) => { // Safari fix
-        const el = container.current
-        if (!el) return
-        if (el.clientHeight !== h || el.clientWidth !== w) {
-          currentChart.current?.destroy()
-          init()
-        }
-      },
+      originalDataRef = React.useRef<any[]>([]),
       init = async () => {
         // Map CSS var colors to their hex values.
         cat10 = cat10.map(cssVarValue)
@@ -1092,6 +1083,7 @@ export const
           data = refactorData(raw_data, plot.marks),
           { Chart } = await import('@antv/g2'),
           chart = plot.marks ? new Chart(makeChart(el, space, plot.marks, model.interactions || [])) : null
+        originalDataRef.current = unpack<any[]>(model.data)
         currentPlot.current = plot
         if (chart) {
           chart.tooltip({
@@ -1105,7 +1097,7 @@ export const
               },
             },
             customContent: (_title, items) => {
-              ReactDOM.render(<PlotTooltip items={items} />, tooltipContainer)
+              ReactDOM.render(<PlotTooltip items={items} originalItems={originalDataRef.current} />, tooltipContainer)
               return tooltipContainer
             }
           })
@@ -1131,10 +1123,7 @@ export const
             }
           }
           chart.render()
-          // React fires mount lifecycle hook before Safari finishes Layout phase so we need recheck if original card dimensions are the
-          // same as after Layout phase. If not, rerender the plot again.
-          setTimeout(() => checkDimensionsPostInit(el.clientWidth, el.clientHeight), 300)
-          themeWatchRef.current = on(themeB, () => {
+          themeWatchRef.current = on(themeB, themesB, () => {
             cat10 = cat10.map(cssVarValue)
             const [geometries, annotations] = makeMarks(marks)
             chart.updateOptions({ geometries, annotations })
@@ -1155,8 +1144,8 @@ export const
       const
         raw_data = unpack<any[]>(model.data),
         data = refactorData(raw_data, currentPlot.current.marks)
+      originalDataRef.current = unpack<any[]>(model.data)
       currentChart.current.changeData(data)
-
     }, [currentChart, currentPlot, model])
 
     const

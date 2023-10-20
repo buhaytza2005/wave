@@ -15,7 +15,7 @@ The default ID and secret are the strings `access_key_id`/`access_key_secret`, w
 During development, you can change the default ID and secret when you start the Wave server like this:
 
 ```shell
-$ ./waved -access-key-id <id> -access-key-secret <secret>
+./waved -access-key-id <id> -access-key-secret <secret>
 ```
 
 If you change the ID and secret, you'll need to ensure that your app or script uses the new credentials by setting the `H2O_WAVE_ACCESS_KEY_ID` and `H2O_WAVE_ACCESS_KEY_SECRET` environment variables accordingly.
@@ -45,7 +45,7 @@ The above command also stores the credentials in a file named `.wave-keychain` i
 You can also make the `-create-access-key` command use a keychain file located elsewhere, like this:
 
 ```shell
-$ ./waved -create-access-key -access-keychain /path/to/file.extension
+./waved -create-access-key -access-keychain /path/to/file.extension
 ```
 
 The Wave server uses the keychain file to authenticate requests from apps and scripts. By default, it automatically loads the `.wave-keychain` file if present in the current working directory.
@@ -53,7 +53,7 @@ The Wave server uses the keychain file to authenticate requests from apps and sc
 To make the Wave server use a specific keychain file, launch it like this:
 
 ```shell
-$ ./waved -access-keychain /path/to/file.extension
+./waved -access-keychain /path/to/file.extension
 ```
 
 To view a sorted list of all the keys in a keychain file, use `-list-access-keys`, like this:
@@ -70,21 +70,25 @@ VAKQY6QJN3RRQDU5LD0E
 To remove a key from a keychain file, use `-remove-access-key`, like this:
 
 ```shell
-$ ./waved -remove-access-key ENHL90KR2HZD6X2ZIYLZ
+./waved -remove-access-key ENHL90KR2HZD6X2ZIYLZ
 ```
 
 To remove a key from a keychain file located elsewhere, do this:
 
 ```shell
-$ ./waved -remove-access-key ENHL90KR2HZD6X2ZIYLZ -access-keychain /path/to/file.extension
+./waved -remove-access-key ENHL90KR2HZD6X2ZIYLZ -access-keychain /path/to/file.extension
 ```
 
 ## HTTPS
 
 To enable HTTP over TLS to secure your Wave server, pass the following flags when starting the Wave server:
 
-- `-tls-cert-file`: path to certificate file.
-- `-tls-key-file`: path to private key file.
+- `-tls-cert-file`: path to certificate file or using `H2O_WAVE_TLS_CERT_FILE` env variable.
+- `-tls-key-file`: path to private key file or using `H2O_WAVE_TLS_KEY_FILE` env variable.
+
+File paths need to be either absolute or relative to the Wave server (waved) location.
+
+Once set, the Wave app needs to know it should talk to the Wave server via `https` and not `http` as it does by default. This can be set using `H2O_WAVE_ADDRESS="https://127.0.0.1:10101"` env variable when starting the Wave app.
 
 ### Self Signed Certificate
 
@@ -92,8 +96,8 @@ To enable TLS during development, use a self-signed certificate.
 
 To create a private key and a self-signed certificate from scratch, use `openssl`:
 
-```
-$ openssl req \
+```shell
+openssl req \
    -newkey rsa:2048 -nodes -keyout domain.key \
    -x509 -days 365 -out domain.crt
 ```
@@ -139,6 +143,15 @@ async def serve(q: Q):
     new_access_token = await q.auth.ensure_fresh_token()
 ```
 
+Synchronous version `ensure_fresh_token_sync` is also supported if your token provider is synchronous. However, using it is heavily discouraged due to its blocking nature - will make the Wave app super slow for all users, thus only recommended for throwaway, single user PoCs. ***Async version is the preferred choice*** to mitigate this.
+
+### FAQ
+
+- **I'm not sure what my oidc provider url is:** The openid connect configuration for any provider is made accessible through the `.well-known/openid-configuration` endpoint. The value of `-oidc-provider-url` must be the base url of your provider. For example, if the configuraton address is at `http://localhost:8080/realms/master/.well-known/openid-configuration`, then the provider url that you have to pass to wave is `http://localhost:8080/realms/master`. Do not use a trailing slash at the end of the provider url!
+- **Do I have to implement the authenticaton callback myself?** No, the callback is handled by the wave server. As mentioned in the description for `-oidc-redirect-url` in the list above, the host part or the base-url suffix is what usually changes between deployment environments, so that's what you need to check for correctness.
+- **The callback is working in my development environment but not in production, or vice versa:** Providers usually allow to register multiple callback URI's. Ensure that the correct and necessary callback URI's for all your deployments are registered in your provider's configuration (ergo, the value you use for `-oidc-redirect-url` is in the list of registered URI's). Otherwise, the redirect will fail with an error `The redirect URI included is not valid`.
+- **My identity provider uses `http` but the authentication link points to `https` which makes the login fail:** This can happen for using a private deployment of an authentication provider where the custom setup might not match the expected setup of the authentication service (check the endpoints in your `.well-known/openid-configuration`). In general, when transferring private data, it should be encrypted by using methods like ssl or tsl. To solve this issue, you will need to check if the openid configuration of your provider can be customized, or [change the protocol](/docs/security#https) (HTTP/HTTPS) of your Wave server to match the one used by your provider.
+
 ## App Server API Access Keys
 
 Access to a Wave app is controlled via [HTTP Basic Authentication](https://tools.ietf.org/html/rfc7617). The basic authentication username/password pair is automatically generated on app launch, and is visible only to the Wave server. You can manually override this behavior by setting the `$WAVE_APP_ACCESS_KEY_ID` / `$WAVE_APP_ACCESS_KEY_SECRET` environment variables (for development/testing only - not recommended in production).
@@ -147,7 +160,7 @@ Access to a Wave app is controlled via [HTTP Basic Authentication](https://tools
 
 You can make the Wave daemon include additional HTTP response headers by using the `-http-headers-file` command line argument to `waved`, pointing to a [MIME-formatted](https://en.wikipedia.org/wiki/MIME#MIME_header_fields) file.
 
-[A sample file](https://github.com/h2oai/wave/blob/master/headers.txt) (make sure there's an empty line at the end):
+[A sample file](https://github.com/h2oai/wave/blob/main/headers.txt) (make sure there's an empty line at the end):
 
 ```txt title="headers.txt"
 X-Frame-Options: SAMEORIGIN
@@ -156,4 +169,12 @@ X-XSS-Protection: 1; mode=block
 
 ```
 
+## Accessing forwarded headers
 
+It's possible to access the HTTP headers that were set on **websocket HTTP connection** request via `q.headers`. This might be useful in case built-in OIDC auth is not an option and you already have an existing, company-wide auth based on intercepting all the traffic and verifying if the requests are authenticated.
+
+:::important
+Since Wave is websocket-based, the headers retrieved do not come from the initial `GET index.html` request, but from the websocket `/_s/` one.
+:::
+
+For a more fine-grained control over which HTTP headers are forwarded or not, check the `H2O_WAVE_FORWARDED_HTTP_HEADERS` [configuration option](/docs/configuration#configuring-the-server).

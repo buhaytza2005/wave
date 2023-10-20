@@ -1200,6 +1200,7 @@ ui_color_picker <- function(
 #' @param visible True if the component should be visible. Defaults to True.
 #' @param tooltip An optional tooltip message displayed when a user clicks the help icon to the right of the component.
 #' @param path The path or URL to link to. If specified, the `name` is ignored. The URL is opened in a new browser window or tab.
+#' @param commands When specified, a split button is rendered with extra actions tied to it within a context menu. Mutually exclusive with `link` attribute.
 #' @return A Button instance.
 #' @export
 ui_button <- function(
@@ -1214,7 +1215,8 @@ ui_button <- function(
   width = NULL,
   visible = NULL,
   tooltip = NULL,
-  path = NULL) {
+  path = NULL,
+  commands = NULL) {
   .guard_scalar("name", "character", name)
   .guard_scalar("label", "character", label)
   .guard_scalar("caption", "character", caption)
@@ -1227,6 +1229,7 @@ ui_button <- function(
   .guard_scalar("visible", "logical", visible)
   .guard_scalar("tooltip", "character", tooltip)
   .guard_scalar("path", "character", path)
+  .guard_vector("commands", "WaveCommand", commands)
   .o <- list(button=list(
     name=name,
     label=label,
@@ -1239,7 +1242,8 @@ ui_button <- function(
     width=width,
     visible=visible,
     tooltip=tooltip,
-    path=path))
+    path=path,
+    commands=commands))
   class(.o) <- append(class(.o), c(.wave_obj, "WaveComponent"))
   return(.o)
 }
@@ -1514,7 +1518,7 @@ ui_markdown_table_cell_type <- function(
 #' @param cell_type Defines how to render each cell in this column. Renders as plain text by default.
 #' @param cell_overflow Defines what to do with a cell's contents in case it does not fit inside the cell.
 #'   One of 'tooltip', 'wrap'. See enum h2o_wave.ui.TableColumnCellOverflow.
-#' @param filters List of values to allow filtering by, needed when pagination is set. Only applicable to filterable columns.
+#' @param filters Explicit list of values to allow filtering by, needed when pagination is set or custom order is needed. Only applicable to filterable columns.
 #' @param align Defines how to align values in a column.
 #'   One of 'left', 'center', 'right'. See enum h2o_wave.ui.TableColumnAlign.
 #' @return A TableColumn instance.
@@ -1647,11 +1651,11 @@ ui_table_pagination <- function(
 #' @param name An identifying name for this component.
 #' @param columns The columns in this table.
 #' @param rows The rows in this table. Mutually exclusive with `groups` attr.
-#' @param multiple True to allow multiple rows to be selected.
-#' @param groupable True to allow group by feature. Not applicable when `pagination` is set.
+#' @param multiple True to allow multiple rows to be selected. Mutually exclusive with `single` attr.
+#' @param groupable True to allow group by feature.
 #' @param downloadable Indicates whether the table rows can be downloaded as a CSV file. Defaults to False.
 #' @param resettable Indicates whether a Reset button should be displayed to reset search / filter / group-by values to their defaults. Defaults to False.
-#' @param height The height of the table, e.g. '400px', '50%', etc.
+#' @param height The height of the table in px (e.g. '200px') or '1' to fill the remaining card space.
 #' @param width The width of the table, e.g. '100px'. Defaults to '100%'.
 #' @param values The names of the selected rows. If this parameter is set, multiple selections will be allowed (`multiple` is assumed to be `True`).
 #' @param checkbox_visibility Controls visibility of table rows when `multiple` is set to `True`. Defaults to 'on-hover'.
@@ -1660,7 +1664,9 @@ ui_table_pagination <- function(
 #' @param tooltip An optional tooltip message displayed when a user clicks the help icon to the right of the component.
 #' @param groups Creates collapsible / expandable groups of data rows. Mutually exclusive with `rows` attr.
 #' @param pagination Display a pagination control at the bottom of the table. Set this value using `ui.table_pagination()`.
-#' @param events The events to capture on this table. One of 'search' | 'sort' | 'filter' | 'download' | 'page_change' | 'reset'.
+#' @param events The events to capture on this table when pagination is set. One of 'search' | 'sort' | 'filter' | 'download' | 'page_change' | 'reset' | 'select'.
+#' @param single True to allow only one row to be selected at time. Mutually exclusive with `multiple` attr.
+#' @param value The name of the selected row. If this parameter is set, single selection will be allowed (`single` is assumed to be `True`).
 #' @return A Table instance.
 #' @export
 ui_table <- function(
@@ -1679,7 +1685,9 @@ ui_table <- function(
   tooltip = NULL,
   groups = NULL,
   pagination = NULL,
-  events = NULL) {
+  events = NULL,
+  single = NULL,
+  value = NULL) {
   .guard_scalar("name", "character", name)
   .guard_vector("columns", "WaveTableColumn", columns)
   .guard_vector("rows", "WaveTableRow", rows)
@@ -1696,6 +1704,8 @@ ui_table <- function(
   .guard_vector("groups", "WaveTableGroup", groups)
   .guard_scalar("pagination", "WaveTablePagination", pagination)
   .guard_vector("events", "character", events)
+  .guard_scalar("single", "logical", single)
+  .guard_scalar("value", "character", value)
   .o <- list(table=list(
     name=name,
     columns=columns,
@@ -1712,7 +1722,9 @@ ui_table <- function(
     tooltip=tooltip,
     groups=groups,
     pagination=pagination,
-    events=events))
+    events=events,
+    single=single,
+    value=value))
   class(.o) <- append(class(.o), c(.wave_obj, "WaveComponent"))
   return(.o)
 }
@@ -2585,22 +2597,31 @@ ui_stats <- function(
 #' @param align Specifies how the individual components are aligned on the vertical axis. Defaults to 'center'.
 #'   One of 'start', 'end', 'center', 'baseline'. See enum h2o_wave.ui.InlineAlign.
 #' @param inset Whether to display the components inset from the parent form, with a contrasting background.
+#' @param height Height of the inline container. Accepts any valid CSS unit e.g. '100vh', '300px'. Use '1' to fill the remaining card space.
+#' @param direction Container direction. Defaults to 'row'.
+#'   One of 'row', 'column'. See enum h2o_wave.ui.InlineDirection.
 #' @return A Inline instance.
 #' @export
 ui_inline <- function(
   items,
   justify = NULL,
   align = NULL,
-  inset = NULL) {
+  inset = NULL,
+  height = NULL,
+  direction = NULL) {
   .guard_vector("items", "WaveComponent", items)
   # TODO Validate justify
   # TODO Validate align
   .guard_scalar("inset", "logical", inset)
+  .guard_scalar("height", "character", height)
+  # TODO Validate direction
   .o <- list(inline=list(
     items=items,
     justify=justify,
     align=align,
-    inset=inset))
+    inset=inset,
+    height=height,
+    direction=direction))
   class(.o) <- append(class(.o), c(.wave_obj, "WaveComponent"))
   return(.o)
 }
@@ -2873,6 +2894,7 @@ ui_image_annotator_item <- function(
 #' @param trigger True if the form should be submitted as soon as an annotation is drawn.
 #' @param image_height The card’s image height. The actual image size is used by default.
 #' @param allowed_shapes List of allowed shapes. Available values are 'rect' and 'polygon'. If not set, all shapes are available by default.
+#' @param events The events to capture on this image annotator. One of `click` or `tool_change`.
 #' @return A ImageAnnotator instance.
 #' @export
 ui_image_annotator <- function(
@@ -2883,7 +2905,8 @@ ui_image_annotator <- function(
   items = NULL,
   trigger = NULL,
   image_height = NULL,
-  allowed_shapes = NULL) {
+  allowed_shapes = NULL,
+  events = NULL) {
   .guard_scalar("name", "character", name)
   .guard_scalar("image", "character", image)
   .guard_scalar("title", "character", title)
@@ -2892,6 +2915,7 @@ ui_image_annotator <- function(
   .guard_scalar("trigger", "logical", trigger)
   .guard_scalar("image_height", "character", image_height)
   .guard_vector("allowed_shapes", "character", allowed_shapes)
+  .guard_vector("events", "character", events)
   .o <- list(image_annotator=list(
     name=name,
     image=image,
@@ -2900,7 +2924,8 @@ ui_image_annotator <- function(
     items=items,
     trigger=trigger,
     image_height=image_height,
-    allowed_shapes=allowed_shapes))
+    allowed_shapes=allowed_shapes,
+    events=events))
   class(.o) <- append(class(.o), c(.wave_obj, "WaveComponent"))
   return(.o)
 }
@@ -2939,7 +2964,7 @@ ui_facepile <- function(
 #' @param label The text displayed above the textbox.
 #' @param name An identifying name for this component.
 #' @param multiline True if the component should allow multi-line text entry.
-#' @param height Custom height in px, e.g. '200px'. Requires `multiline` to be set.
+#' @param height Custom height in px (e.g. '200px') or '1' to fill the remaining card space. Requires `multiline` to be set.
 #' @return A CopyableText instance.
 #' @export
 ui_copyable_text <- function(
@@ -2966,10 +2991,10 @@ ui_copyable_text <- function(
 #' Create a contextual menu component. Useful when you have a lot of links and want to conserve the space.
 #'
 #' @param items Commands to render.
-#' @param icon The card's icon. Mutually exclusive with the image and label.
-#' @param image The card’s image, preferably user avatar. Mutually exclusive with the icon and label.
+#' @param icon The card's icon.
+#' @param image The card’s image, preferably user avatar.
 #' @param name An identifying name for this component.
-#' @param label The text displayed next to the chevron. Mutually exclusive with the icon and image.
+#' @param label The text displayed next to the chevron.
 #' @return A Menu instance.
 #' @export
 ui_menu <- function(
@@ -3218,6 +3243,45 @@ ui_chat_card <- function(
     commands=commands,
     view='chat')
   class(.o) <- append(class(.o), c(.wave_obj, "WaveChatCard"))
+  return(.o)
+}
+
+#' Create a chatbot card to allow getting prompts from users and providing them with LLM generated answers.
+#'
+#' @param box A string indicating how to place this component on the page.
+#' @param name An identifying name for this component.
+#' @param data Chat messages data. Requires cyclic buffer.
+#' @param placeholder Chat input box placeholder. Use for prompt examples.
+#' @param events The events to capture on this chatbot. One of 'stop'.
+#' @param generating True to show a button to stop the text generation. Defaults to False.
+#' @param commands Contextual menu commands for this component.
+#' @return A ChatbotCard instance.
+#' @export
+ui_chatbot_card <- function(
+  box,
+  name,
+  data,
+  placeholder = NULL,
+  events = NULL,
+  generating = NULL,
+  commands = NULL) {
+  .guard_scalar("box", "character", box)
+  .guard_scalar("name", "character", name)
+  # TODO Validate data: Rec
+  .guard_scalar("placeholder", "character", placeholder)
+  .guard_vector("events", "character", events)
+  .guard_scalar("generating", "logical", generating)
+  .guard_vector("commands", "WaveCommand", commands)
+  .o <- list(
+    box=box,
+    name=name,
+    data=data,
+    placeholder=placeholder,
+    events=events,
+    generating=generating,
+    commands=commands,
+    view='chatbot')
+  class(.o) <- append(class(.o), c(.wave_obj, "WaveChatbotCard"))
   return(.o)
 }
 
@@ -3475,6 +3539,7 @@ ui_grid_card <- function(
 #' @param icon An optional icon to display next to the label.
 #' @param disabled True if this item should be disabled.
 #' @param tooltip An optional tooltip message displayed when a user hovers over this item.
+#' @param path The path or URL to link to. If specified, the `name` is ignored. The URL is opened in a new browser window or tab. E.g. `/foo.html` or `http://example.com/foo.html`
 #' @return A NavItem instance.
 #' @export
 ui_nav_item <- function(
@@ -3482,18 +3547,21 @@ ui_nav_item <- function(
   label,
   icon = NULL,
   disabled = NULL,
-  tooltip = NULL) {
+  tooltip = NULL,
+  path = NULL) {
   .guard_scalar("name", "character", name)
   .guard_scalar("label", "character", label)
   .guard_scalar("icon", "character", icon)
   .guard_scalar("disabled", "logical", disabled)
   .guard_scalar("tooltip", "character", tooltip)
+  .guard_scalar("path", "character", path)
   .o <- list(
     name=name,
     label=label,
     icon=icon,
     disabled=disabled,
-    tooltip=tooltip)
+    tooltip=tooltip,
+    path=path)
   class(.o) <- append(class(.o), c(.wave_obj, "WaveNavItem"))
   return(.o)
 }
@@ -3830,6 +3898,7 @@ ui_markdown_card <- function(
 #' @param box A string indicating how to place this component on the page.
 #' @param title The title for this card.
 #' @param content The HTML content.
+#' @param compact True if outer spacing should be removed. Defaults to False.
 #' @param commands Contextual menu commands for this component.
 #' @return A MarkupCard instance.
 #' @export
@@ -3837,15 +3906,18 @@ ui_markup_card <- function(
   box,
   title,
   content,
+  compact = NULL,
   commands = NULL) {
   .guard_scalar("box", "character", box)
   .guard_scalar("title", "character", title)
   .guard_scalar("content", "character", content)
+  .guard_scalar("compact", "logical", compact)
   .guard_vector("commands", "WaveCommand", commands)
   .o <- list(
     box=box,
     title=title,
     content=content,
+    compact=compact,
     commands=commands,
     view='markup')
   class(.o) <- append(class(.o), c(.wave_obj, "WaveMarkupCard"))

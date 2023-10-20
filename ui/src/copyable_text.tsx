@@ -4,39 +4,38 @@ import React from 'react'
 import { stylesheet } from 'typestyle'
 import { clas, cssVar, pc } from './theme'
 
-const css = stylesheet({
-  multiContainer: {
-    position: 'relative',
-    $nest: {
-      '&:hover > button': {
-        opacity: 1
+const
+  css = stylesheet({
+    btnMultiline: {
+      opacity: 0,
+      transition: 'opacity .5s'
+    },
+    btn: {
+      minWidth: 'initial',
+      position: 'absolute',
+      width: 24,
+      height: 24,
+      right: 0,
+      transform: 'translate(-4px, 4px)',
+      zIndex: 1,
+    },
+    copiedBtn: {
+      background: cssVar('$green'),
+      $nest: {
+        '&:hover': {
+          background: cssVar('$green'),
+        }
       }
+    },
+    labelContainer: {
+      position: 'relative'
     }
-  },
-  compactContainer: {
-    position: 'relative',
-  },
-  btnMultiline: {
-    opacity: 0,
-    transition: 'opacity .5s'
-  },
-  btn: {
-    minWidth: 'initial',
-    position: 'absolute',
-    top: 31,
-    right: 4,
-    width: 24,
-    height: 24
-  },
-  copiedBtn: {
-    background: cssVar('$green'),
-    $nest: {
-      '&:hover': {
-        background: cssVar('$green'),
-      }
-    }
+  }),
+  fullHeightStyle = {
+    display: 'flex',
+    flexGrow: 1,
+    flexDirection: 'column',
   }
-})
 
 /**
  * Create a copyable text component.
@@ -51,13 +50,14 @@ export interface CopyableText {
   name?: S
   /** True if the component should allow multi-line text entry. */
   multiline?: B
-  /** Custom height in px, e.g. '200px'. Requires `multiline` to be set. */
+  /** Custom height in px (e.g. '200px') or '1' to fill the remaining card space. Requires `multiline` to be set. */
   height?: S
 }
 
 export const XCopyableText = ({ model }: { model: CopyableText }) => {
   const
     { name, multiline, label, value, height } = model,
+    heightStyle = multiline && height === '1' ? fullHeightStyle : undefined,
     ref = React.useRef<Fluent.ITextField>(null),
     timeoutRef = React.useRef<U>(),
     [copied, setCopied] = React.useState(false),
@@ -81,21 +81,33 @@ export const XCopyableText = ({ model }: { model: CopyableText }) => {
   React.useEffect(() => () => window.clearTimeout(timeoutRef.current), [])
 
   return (
-    <div data-test={name} className={multiline ? css.multiContainer : css.compactContainer}>
-      <Fluent.TextField
-        componentRef={ref}
-        value={value}
-        label={label}
-        multiline={multiline}
-        styles={{ root: { width: pc(100) }, fieldGroup: multiline && height ? { minHeight: height } : undefined }}
-        readOnly
-      />
-      <Fluent.PrimaryButton
-        title='Copy to clipboard'
-        onClick={onClick}
-        iconProps={{ iconName: copied ? 'CheckMark' : 'Copy' }}
-        className={clas(css.btn, copied ? css.copiedBtn : '', multiline ? css.btnMultiline : '')}
-      />
-    </div>
+    <Fluent.TextField
+      data-test={name}
+      componentRef={ref}
+      value={value}
+      multiline={multiline}
+      onRenderLabel={() =>
+        <div className={css.labelContainer}>
+          <Fluent.Label>{label}</Fluent.Label>
+          <Fluent.PrimaryButton
+            title='Copy to clipboard'
+            onClick={onClick}
+            iconProps={{ iconName: copied ? 'CheckMark' : 'Copy' }}
+            className={clas(css.btn, copied ? css.copiedBtn : '', multiline ? css.btnMultiline : '')}
+          />
+        </div>
+      }
+      styles={{
+        root: {
+          ...heightStyle,
+          textFieldRoot: { position: 'relative', width: pc(100) },
+          textFieldMultiline: multiline ? { '&:hover button': { opacity: 1 } } : undefined
+        },
+        wrapper: heightStyle,
+        fieldGroup: heightStyle || { minHeight: height },
+        field: { ...heightStyle, height, resize: multiline ? 'vertical' : 'none', },
+      }}
+      readOnly
+    />
   )
 }

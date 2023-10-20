@@ -62,6 +62,27 @@
     ],
     "description": "Create a minimal Wave ChatCard."
   },
+  "Wave ChatbotMessage": {
+    "prefix": "w_chatbot_message",
+    "body": [
+      "ui.chatbot_message(content='$1', from_user=${2:False}),$0"
+    ],
+    "description": "Create a minimal Wave ChatbotMessage."
+  },
+  "Wave Chatbot": {
+    "prefix": "w_chatbot",
+    "body": [
+      "ui.chatbot(name='$1', data=$2),$0"
+    ],
+    "description": "Create a minimal Wave Chatbot."
+  },
+  "Wave ChatbotCard": {
+    "prefix": "w_chatbot_card",
+    "body": [
+      "ui.chatbot_card(box='$1', name='$2', data=$3)$0"
+    ],
+    "description": "Create a minimal Wave ChatbotCard."
+  },
   "Wave Checkbox": {
     "prefix": "w_checkbox",
     "body": [
@@ -947,7 +968,7 @@
   "Wave Full Button": {
     "prefix": "w_full_button",
     "body": [
-      "ui.button(name='$1', label='$2', caption='$3', value='$4', primary=${5:False}, disabled=${6:False}, link=${7:False}, icon='$8', width='$9', visible=${10:True}, tooltip='$11', path='$12'),$0"
+      "ui.button(name='$1', label='$2', caption='$3', value='$4', primary=${5:False}, disabled=${6:False}, link=${7:False}, icon='$8', width='$9', visible=${10:True}, tooltip='$11', path='$12', commands=[\n\t\t$13\t\t\n]),$0"
     ],
     "description": "Create a full Wave Button."
   },
@@ -985,6 +1006,27 @@
       "ui.chat_card(box='$1', title='$2', data=$3, capacity=${4:50}, commands=[\n\t\t$5\t\t\n])$0"
     ],
     "description": "Create a full Wave ChatCard."
+  },
+  "Wave Full ChatbotMessage": {
+    "prefix": "w_full_chatbot_message",
+    "body": [
+      "ui.chatbot_message(content='$1', from_user=${2:False}),$0"
+    ],
+    "description": "Create a full Wave ChatbotMessage."
+  },
+  "Wave Full Chatbot": {
+    "prefix": "w_full_chatbot",
+    "body": [
+      "ui.chatbot(name='$1', data=$2, placeholder='$3', generating=${4:False}, events=[\n\t\t$5\t\t\n], prev_items=[\n\t\t$6\t\t\n]),$0"
+    ],
+    "description": "Create a full Wave Chatbot."
+  },
+  "Wave Full ChatbotCard": {
+    "prefix": "w_full_chatbot_card",
+    "body": [
+      "ui.chatbot_card(box='$1', name='$2', data=$3, placeholder='$4', generating=${5:False}, events=[\n\t\t$6\t\t\n], commands=[\n\t\t$7\t\t\n])$0"
+    ],
+    "description": "Create a full Wave ChatbotCard."
   },
   "Wave Full Checkbox": {
     "prefix": "w_full_checkbox",
@@ -1108,7 +1150,7 @@
   "Wave Full Inline": {
     "prefix": "w_full_inline",
     "body": [
-      "ui.inline(justify='${1:start}', align='${2:center}', inset=${3:False}, items=[\n\t\t$4\t\t\n]),$0"
+      "ui.inline(justify='${1:start}', align='${2:center}', inset=${3:False}, height='$4', direction='${5:row}', items=[\n\t\t$6\t\t\n]),$0"
     ],
     "description": "Create a full Wave Inline."
   },
@@ -1220,7 +1262,7 @@
   "Wave Full ImageAnnotator": {
     "prefix": "w_full_image_annotator",
     "body": [
-      "ui.image_annotator(name='$1', image='$2', title='$3', trigger=${4:False}, image_height='$5', tags=[\n\t\t$6\t\t\n], items=[\n\t\t$7\t\t\n], allowed_shapes=[\n\t\t$8\t\t\n]),$0"
+      "ui.image_annotator(name='$1', image='$2', title='$3', trigger=${4:False}, image_height='$5', tags=[\n\t\t$6\t\t\n], items=[\n\t\t$7\t\t\n], allowed_shapes=[\n\t\t$8\t\t\n], events=[\n\t\t$9\t\t\n]),$0"
     ],
     "description": "Create a full Wave ImageAnnotator."
   },
@@ -1297,7 +1339,7 @@
   "Wave Full MarkupCard": {
     "prefix": "w_full_markup_card",
     "body": [
-      "ui.markup_card(box='$1', title='$2', content='$3', commands=[\n\t\t$4\t\t\n])$0"
+      "ui.markup_card(box='$1', title='$2', content='$3', compact=${4:False}, commands=[\n\t\t$5\t\t\n])$0"
     ],
     "description": "Create a full Wave MarkupCard."
   },
@@ -1367,7 +1409,7 @@
   "Wave Full NavItem": {
     "prefix": "w_full_nav_item",
     "body": [
-      "ui.nav_item(name='$1', label='$2', icon='$3', disabled=${4:False}, tooltip='$5'),$0"
+      "ui.nav_item(name='$1', label='$2', icon='$3', disabled=${4:False}, tooltip='$5', path='$6'),$0"
     ],
     "description": "Create a full Wave NavItem."
   },
@@ -1668,7 +1710,7 @@
   "Wave Full Table": {
     "prefix": "w_full_table",
     "body": [
-      "ui.table(name='$1', multiple=${2:False}, groupable=${3:False}, downloadable=${4:False}, resettable=${5:False}, height='$6', width='${7:100%}', checkbox_visibility='${8:on-hover}', visible=${9:True}, tooltip='$10', pagination=${11:None}, columns=[\n\t\t$12\t\t\n], rows=[\n\t\t$13\t\t\n], values=[\n\t\t$14\t\t\n], groups=[\n\t\t$15\t\t\n], events=[\n\t\t$16\t\t\n]),$0"
+      "ui.table(name='$1', multiple=${2:False}, groupable=${3:False}, downloadable=${4:False}, resettable=${5:False}, height='$6', width='${7:100%}', checkbox_visibility='${8:on-hover}', visible=${9:True}, tooltip='$10', pagination=${11:None}, single=${12:False}, value='$13', columns=[\n\t\t$14\t\t\n], rows=[\n\t\t$15\t\t\n], values=[\n\t\t$16\t\t\n], groups=[\n\t\t$17\t\t\n], events=[\n\t\t$18\t\t\n]),$0"
     ],
     "description": "Create a full Wave Table."
   },

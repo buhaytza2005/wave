@@ -17,6 +17,7 @@ import { B, Box, box, Id, S } from 'h2o-wave'
 import React from 'react'
 import { Component, XComponents } from './form'
 import { bond, wave } from './ui'
+import { Z_INDEX } from './parts/styleConstants'
 
 export const dialogB: Box<Dialog | null> = box()
 
@@ -43,6 +44,8 @@ export interface Dialog {
   /** The events to capture on this dialog. One of 'dismissed'. */
   events?: S[]
 }
+
+export const layerProps: Fluent.ILayerProps = { styles: { root: { zIndex: Z_INDEX.DIALOG } } }
 
 export default bond(() => {
   const
@@ -74,7 +77,7 @@ export default bond(() => {
           hidden={!dialogB()}
           onDismiss={onDismiss}
           dialogContentProps={dialogContentProps}
-          modalProps={{ isBlocking: blocking }}
+          modalProps={{ isBlocking: blocking, layerProps }}
           minWidth={width}
           maxWidth={width}>
           <XComponents items={items} />

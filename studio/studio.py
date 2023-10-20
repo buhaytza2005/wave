@@ -18,6 +18,8 @@ import file_utils
 import studio_editor as editor
 
 
+# TODO update this app with by-name component access once the Wave version higher than 0.25.2 is available.
+
 class Project:
     def __init__(self) -> None:
         self.dir = 'project'
@@ -170,7 +172,7 @@ async def display_logs(q: Q) -> None:
 async def render_code(q: Q):
     if q.events.editor:
         code = file_utils.pythonify_js_code(q.events.editor.change if q.events.editor else '')
-        with open(q.client.opened_file, 'w') as f:
+        with open(q.client.opened_file, 'w', encoding='utf-8') as f:
             f.write(code)
         if not project.entry_point and ('@app(' in code or 'site[' in code):
             project.entry_point = q.client.opened_file
