@@ -101,7 +101,7 @@ export const
         multiline: m.multiline,
         spellCheck: m.spellcheck,
         /* type: m.password ? 'password' : (m.type || 'text') *,*/
-        type: m.password ? 'password' : undefined,
+        type: m.password ? 'password' : 'text',
         inputMode: (m.type == 'number' || m.type == 'tel') ? 'numeric': undefined
       }
 
