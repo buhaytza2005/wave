@@ -45,7 +45,7 @@ q.page['justify'] = ui.form_card(box='1 1 3 5', items=[
 
 ## Vertical alignment (`align`)
 
-You can specify how the elements should be horizontally aligned using the `align` parameter. The default value is `center`.
+You can specify how the elements should be vertically aligned using the `align` parameter. The default value is `center`.
 
 ```py
 items = [
