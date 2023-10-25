@@ -100,8 +100,9 @@ export const
         suffix: m.suffix,
         multiline: m.multiline,
         spellCheck: m.spellcheck,
-        type: m.password ? 'password' : (m.type || 'text'),
-        inputMode: m.type == 'number' ? 'numeric': undefined
+        /* type: m.password ? 'password' : (m.type || 'text') *,*/
+        type: m.password ? 'password' : undefined,
+        inputMode: (m.type == 'number' || m.type == 'tel') ? 'numeric': undefined
       }
 
     React.useEffect(() => {
