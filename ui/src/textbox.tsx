@@ -65,6 +65,9 @@ export interface Textbox {
   tooltip?: S
   /** True if the text may be checked for spelling errors. Defaults to True. */
   spellcheck?: B
+  /** The type of a textbox. Can be one of 'text', 'number' or 'tel'. Defaults to 'text'. */
+  type?: 'text' | 'number' | 'tel'
+
 }
 
 const DEBOUNCE_TIMEOUT = 500
@@ -96,7 +99,7 @@ export const
         suffix: m.suffix,
         multiline: m.multiline,
         spellCheck: m.spellcheck,
-        type: m.password ? 'password' : undefined,
+        type: m.password ? 'password' : (m.type || 'text'),
       }
 
     React.useEffect(() => {
