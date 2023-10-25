@@ -66,7 +66,7 @@ export interface Textbox {
   /** True if the text may be checked for spelling errors. Defaults to True. */
   spellcheck?: B
   /** The type of a textbox. Can be one of 'text', 'number' or 'tel'. Defaults to 'text'. */
-  type?: 'text' | 'numeric' | 'tel'
+  type?: 'text' | 'number' | 'tel'
 
 
 }
@@ -100,8 +100,8 @@ export const
         suffix: m.suffix,
         multiline: m.multiline,
         spellCheck: m.spellcheck,
-        /*type: m.password ? 'password' : (m.type || 'text'),*/
-        inputMode: m.type || 'text'
+        type: m.password ? 'password' : (m.type || 'text'),
+        inputMode: m.type == 'number' ? 'numeric': undefined
       }
 
     React.useEffect(() => {
